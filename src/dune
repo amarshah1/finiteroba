@@ -1,0 +1,25 @@
+(menhir
+ (modules Parser)
+ (flags))
+
+(ocamllex
+ (modules Lexer))
+
+(library
+ (name algaroba_lib)
+ (public_name algaroba.algaroba_lib)
+ (modules
+  finite_reduction
+  f1normalize
+  context
+  z3_utils
+  ast
+  loc
+  smtlib_utils
+  parser
+  lexer)
+ (libraries containers ocamlgraph z3 core)
+ (preprocess
+  (pps landmarks-ppx --auto))
+ (flags :standard -warn-error -A))
+
