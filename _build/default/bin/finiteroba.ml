@@ -4,6 +4,8 @@ open Core
 open Algaroba_lib.Context
 open Algaroba_lib.Finite_reduction
 open Algaroba_lib.Z3_utils
+open Algaroba_lib.F0inline
+open Algaroba_lib.F0rename
 open Algaroba_lib.F1normalize
 
 let usage_msg = "finiteroba <query> [options]"
@@ -45,7 +47,12 @@ let speclist =
           in
           print_time before "Parsing time" ;
           let before = Core.Time.now () in
-          let ns =  normalize_statements (List.map stmt_list ~f:statement_to_stmt) in
+          (*INLINING seems to be really bad efficiency wise, so we won't do it rn*)
+          (* could keep this as an optimization for the future -> inlining + CSE could be good*)
+          let rs =  rename_vars_statements (List.map stmt_list ~f:statement_to_stmt) in
+          let before = Core.Time.now () in
+          print_time before "Renmae time" ;
+          let ns =  normalize_statements rs in
           let before = Core.Time.now () in
           print_time before "Convert to NNF time" ;
           let nas = remove_datatypes ns in

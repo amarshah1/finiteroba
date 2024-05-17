@@ -1,6 +1,6 @@
-val __generated_landmark_1fa9b3a48f2490eec7c634c12f583688_1 :
+val __generated_landmark_afa82d893d677b371fbf125e951cf3d2_1 :
   Landmark.landmark
-val __generated_landmark_1fa9b3a48f2490eec7c634c12f583688_2 :
+val __generated_landmark_afa82d893d677b371fbf125e951cf3d2_2 :
   Landmark.landmark
 type token =
     ZERO_EXTEND
@@ -33,6 +33,8 @@ type token =
   | DATA
   | CHECK_SAT_ASSUMING
   | CHECK_SAT
+  | BV3
+  | BV0
   | BITVEC
   | BANG
   | AT

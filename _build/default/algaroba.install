@@ -2,6 +2,8 @@ lib: [
   "_build/install/default/lib/algaroba/META"
   "_build/install/default/lib/algaroba/algaroba_lib/Ast.ml" {"algaroba_lib/Ast.ml"}
   "_build/install/default/lib/algaroba/algaroba_lib/Context.ml" {"algaroba_lib/Context.ml"}
+  "_build/install/default/lib/algaroba/algaroba_lib/F0inline.ml" {"algaroba_lib/F0inline.ml"}
+  "_build/install/default/lib/algaroba/algaroba_lib/F0rename.ml" {"algaroba_lib/F0rename.ml"}
   "_build/install/default/lib/algaroba/algaroba_lib/F1normalize.ml" {"algaroba_lib/F1normalize.ml"}
   "_build/install/default/lib/algaroba/algaroba_lib/Finite_reduction.ml" {"algaroba_lib/Finite_reduction.ml"}
   "_build/install/default/lib/algaroba/algaroba_lib/Lexer.ml" {"algaroba_lib/Lexer.ml"}
@@ -24,6 +26,12 @@ lib: [
   "_build/install/default/lib/algaroba/algaroba_lib/algaroba_lib__Context.cmi" {"algaroba_lib/algaroba_lib__Context.cmi"}
   "_build/install/default/lib/algaroba/algaroba_lib/algaroba_lib__Context.cmt" {"algaroba_lib/algaroba_lib__Context.cmt"}
   "_build/install/default/lib/algaroba/algaroba_lib/algaroba_lib__Context.cmx" {"algaroba_lib/algaroba_lib__Context.cmx"}
+  "_build/install/default/lib/algaroba/algaroba_lib/algaroba_lib__F0inline.cmi" {"algaroba_lib/algaroba_lib__F0inline.cmi"}
+  "_build/install/default/lib/algaroba/algaroba_lib/algaroba_lib__F0inline.cmt" {"algaroba_lib/algaroba_lib__F0inline.cmt"}
+  "_build/install/default/lib/algaroba/algaroba_lib/algaroba_lib__F0inline.cmx" {"algaroba_lib/algaroba_lib__F0inline.cmx"}
+  "_build/install/default/lib/algaroba/algaroba_lib/algaroba_lib__F0rename.cmi" {"algaroba_lib/algaroba_lib__F0rename.cmi"}
+  "_build/install/default/lib/algaroba/algaroba_lib/algaroba_lib__F0rename.cmt" {"algaroba_lib/algaroba_lib__F0rename.cmt"}
+  "_build/install/default/lib/algaroba/algaroba_lib/algaroba_lib__F0rename.cmx" {"algaroba_lib/algaroba_lib__F0rename.cmx"}
   "_build/install/default/lib/algaroba/algaroba_lib/algaroba_lib__F1normalize.cmi" {"algaroba_lib/algaroba_lib__F1normalize.cmi"}
   "_build/install/default/lib/algaroba/algaroba_lib/algaroba_lib__F1normalize.cmt" {"algaroba_lib/algaroba_lib__F1normalize.cmt"}
   "_build/install/default/lib/algaroba/algaroba_lib/algaroba_lib__F1normalize.cmx" {"algaroba_lib/algaroba_lib__F1normalize.cmx"}
@@ -55,4 +63,5 @@ libexec: [
 ]
 bin: [
   "_build/install/default/bin/finiteroba"
+  "_build/install/default/bin/test"
 ]

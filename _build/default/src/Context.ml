@@ -53,7 +53,17 @@ module Ctx = struct
     array_bv_index_size: int;
     array_item_length: int;
     array_subtype : PA.ty;
+    returns_bool : bool;
+    equality_fun: PA.term -> PA.term -> PA.term;
+    disequality_fun: PA.term -> PA.term -> PA.term;
   }
+
+  let ty_printer ty = PA.pp_ty Format.std_formatter ty
+
+  let print_array_term (a : array_term) = 
+    print_string ("{array length: " ^ (string_of_int a.array_length) ^ ";\n num_items: " ^ (string_of_int a.num_items) ^ ";\n array_bv_index_size: " ^ (string_of_int a.array_bv_index_size) ^ ";\n array_item_length: " ^ (string_of_int a.array_item_length) ^ ";\n array_subtype: "); 
+    (ty_printer a.array_subtype);
+    print_string "}"
 
   type adt_with_dependencies = {
     dependencies: string list;
@@ -66,6 +76,7 @@ module Ctx = struct
     mutable testers: finite_tester StrTbl.t;
     mutable array_terms: array_term StrTbl.t;
     mutable adt_cycle_list: adt_with_dependencies StrTbl.t;
+    mutable var_rename_index: int;
     mutable vars_created: int;
     set_logic: string;
   }
@@ -77,6 +88,7 @@ module Ctx = struct
     testers = StrTbl.create 32;
     array_terms = StrTbl.create 64;
     adt_cycle_list = StrTbl.create 32;
+    var_rename_index = 0;
     vars_created = 0;
     set_logic = "UFBV";
   }
@@ -96,6 +108,9 @@ module Ctx = struct
   let make_finite_sel og_ty bv_ty returned_adt_originally size start_pos stop_pos = 
     let (selector_record : finite_sel) = {return_typ_original = og_ty; return_type_bv = bv_ty; returned_adt_originally = returned_adt_originally; length = size; start_pos = start_pos; stop_pos = stop_pos } in
     selector_record
+
+  let increment_var_rename_index () : unit = 
+    t.var_rename_index <- t.var_rename_index + 1
 
   let increment_vars_created () : unit = 
     t.vars_created <- t.vars_created + 1
@@ -138,3 +153,38 @@ let statement_printer lst = Format.printf "@[<hv>%a@]@." (PA.pp_list PA.pp_stmt)
 let stmt_printer lst =  statement_printer (List.map stmt_to_statement lst)
 
 let ty_printer ty = PA.pp_ty Format.std_formatter ty
+
+(*TODO: update this function, will need to implement lookup_fun_def*)
+(* let rec get_type (term: PA.term) : PA.ty = 
+  begin match term with
+    | True -> PA.Ty_bool
+    | False -> PA.Ty_bool
+    | Const v -> (Ctx.lookup_fun_def v) (*TODO*)
+    | Arith (op, _) -> 
+        begin match op with
+        | Leq -> PA.Ty_bool
+        | Lt -> PA.Ty_bool
+        | Geq -> PA.Ty_bool
+        | Gt -> PA.Ty_bool
+        | Add -> PA.Ty_real
+        | Minus -> PA.Ty_real
+        | Mult -> PA.Ty_real
+        | Div -> PA.Ty_real
+        end
+    | App (s, _) -> Ctx.lookup_fun_def s (*PA.Ty_app (s, (List.map (fun x -> get_type x) terms))*) (*TODO*)
+    | HO_app (_,_) -> PA.Ty_bool(*raise (UnsupportedQuery "We do not support HO_App")*)
+    | Match (_, branches) -> raise (UnsupportedQuery "We do not currently support Match")
+    | If (_, t2, _) -> get_type t2
+    | Is_a (_, _) -> PA.Ty_bool
+    | Fun (_, t) -> get_type t
+    | Eq (_, _) -> PA.Ty_bool
+    | Imply (_, _) -> PA.Ty_bool
+    | And _ -> PA.Ty_bool
+    | Or _ -> PA.Ty_bool
+    | Not _ -> PA.Ty_bool
+    | Distinct _ -> PA.Ty_bool
+    | Cast (_, ty) -> ty
+    | Forall (_, _) -> raise (UnsupportedQuery "We do not support Forall")
+    | Exists (_, _) -> raise (UnsupportedQuery "We do not support Exists")
+    | Attr (t, _) -> get_type t
+  end *)

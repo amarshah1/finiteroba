@@ -10,6 +10,8 @@
  (public_name algaroba.algaroba_lib)
  (modules
   finite_reduction
+  f0inline
+  f0rename
   f1normalize
   context
   z3_utils

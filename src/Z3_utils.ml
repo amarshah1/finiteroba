@@ -74,6 +74,8 @@ let convert_smt_to_z3_bitvecop context (bv_op : PA.bitvec_op) =
     | BVUDiv -> (fun exprs -> match exprs with [expr1; expr2] -> Z3.BitVector.mk_udiv context expr1 expr2 | _ -> raise (UnsupportedQuery "Incorrect bitvector operation"))
     | Concat -> (fun exprs -> match exprs with [expr1; expr2] -> Z3.BitVector.mk_concat context expr1 expr2 | _ -> raise (UnsupportedQuery "Incorrect bitvector operation"))
     | BV2nat -> (fun exprs -> match exprs with [expr] -> Z3.BitVector.mk_bv2int context expr false | _ -> raise (UnsupportedQuery "Incorrect bitvector operation"))
+    | BV0 i -> (fun exprs -> match exprs with [] -> Z3.BitVector.mk_numeral context "0" i | _ -> raise (UnsupportedQuery "Incorrect bitvector operation"))
+    | BV3 i -> (fun exprs -> match exprs with [] -> Z3.BitVector.mk_numeral context "3" i | _ -> raise (UnsupportedQuery "Incorrect bitvector operation"))
     | Zero_extend i -> (fun exprs -> match exprs with [expr] -> Z3.BitVector.mk_zero_ext context i expr | _ -> raise (UnsupportedQuery "Incorrect bitvector operation"))
     | Sign_extend i -> (fun exprs -> match exprs with [expr] -> Z3.BitVector.mk_sign_ext context i expr | _ -> raise (UnsupportedQuery "Incorrect bitvector operation"))
     | Extract (i, j) -> (fun exprs -> match exprs with [expr] -> Z3.BitVector.mk_extract context i j expr | _ -> raise (UnsupportedQuery "Incorrect bitvector operation"))

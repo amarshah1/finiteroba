@@ -1,1 +1,0 @@
-../../../../default/smtlib-utils/README.md

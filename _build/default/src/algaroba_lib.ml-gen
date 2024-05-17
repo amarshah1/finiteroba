@@ -6,6 +6,12 @@ module Ast = Algaroba_lib__Ast
 (** @canonical Algaroba_lib.Context *)
 module Context = Algaroba_lib__Context
 
+(** @canonical Algaroba_lib.F0inline *)
+module F0inline = Algaroba_lib__F0inline
+
+(** @canonical Algaroba_lib.F0rename *)
+module F0rename = Algaroba_lib__F0rename
+
 (** @canonical Algaroba_lib.F1normalize *)
 module F1normalize = Algaroba_lib__F1normalize
 

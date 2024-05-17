@@ -3,7 +3,19 @@
  (public_name finiteroba)
  (modes exe)
  (modules finiteroba)
- (libraries core algaroba_lib)
+ (libraries core algaroba_lib landmarks)
+ (preprocess
+  (pps ppx_let landmarks-ppx --auto))
+ (flags
+  (:standard -warn-error -A)))
+
+(executable
+ (name test)
+ (public_name test)
+ (modes exe)
+ (modules test)
+ (libraries core algaroba_lib landmarks)
+ (instrumentation (backend landmarks --auto))
  (preprocess
   (pps ppx_let landmarks-ppx --auto))
  (flags

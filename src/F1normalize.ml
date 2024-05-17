@@ -8,6 +8,7 @@ let negate (not_parity: bool) (term: PA.term) =
   else term
 
 
+(*TODO: this needs to be tail recursive as well*)
 let rec normalize (not_parity: bool)  (term : PA.term) =
   match term with
   | HO_app (_, _) -> raise (UnsupportedQuery "We do not support HO_App")
@@ -33,7 +34,7 @@ let rec normalize (not_parity: bool)  (term : PA.term) =
 let normalize_statements stmts =
   let rec aux stmts acc =
     begin match stmts with
-      | PA.Stmt_assert term :: rest -> let normalized_assert =  PA.Stmt_assert (normalize false term) in
+      | PA.Stmt_assert term :: rest -> let normalized_assert =  PA.Stmt_assert  term (*(normalize false term)*) in
                                        (aux rest (acc @ [normalized_assert]))
       | stmt :: rest -> (aux rest (acc @ [stmt]))
       | _ -> acc

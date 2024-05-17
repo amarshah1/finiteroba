@@ -49,6 +49,8 @@ type bitvec_op =
   | BVUDiv
   | Concat
   | BV2nat
+  | BV0 of int
+  | BV3 of int
   | Zero_extend of int
   | Sign_extend of int
   | Extract of int * int
@@ -334,6 +336,8 @@ let str_of_bitvec = function
   | BVUDiv -> "bvudiv"
   | Concat -> "concat"
   | BV2nat -> "bv2nat"
+  | BV0 i -> "_ bv0 " ^ (string_of_int i)
+  | BV3 i -> "_ bv3 " ^ (string_of_int i)
   | Zero_extend i -> "(_ zero_extend " ^ (string_of_int i) ^ ")"
   | Sign_extend i -> "(_ sign_extend " ^ (string_of_int i) ^ ")"
   | Extract (i, j) -> "(_ extract " ^ (string_of_int i) ^ " " ^ (string_of_int j) ^ ")"

@@ -32,6 +32,8 @@ type token =
   | DATA
   | CHECK_SAT_ASSUMING
   | CHECK_SAT
+  | BV3
+  | BV0
   | BITVEC
   | BANG
   | AT
