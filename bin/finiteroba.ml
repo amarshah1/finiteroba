@@ -7,6 +7,7 @@ open Finiteroba_lib.Z3_utils
 open Finiteroba_lib.F0inline
 open Finiteroba_lib.F0rename
 open Finiteroba_lib.F1normalize
+open Finiteroba_lib.F2simplify
 
 let usage_msg = "finiteroba <query> [options]"
 
@@ -76,6 +77,10 @@ let speclist =
           let nas = remove_datatypes ns in
           print_time before "Reduction time" ;
           let before = Core.Time.now () in
+          (* Doing a post-reduction simplification in order to be compatible with bitwuzla*)
+          let ss = simplify_statements nas in
+          print_time before "Post-reduction simplification time" ;
+          let before = Core.Time.now () in
           match !output_file with
           | "" -> (
                 let first_result, context, solver, sorts, func_decls =
@@ -95,7 +100,7 @@ let speclist =
                 print_time before "Reduce axioms time" ;
                 (* Format.pp_print_string fmt (Z3.Solver.to_string solver) ; *)
                 Format.fprintf fmt "@[<hv>%a@]" (PA.pp_list PA.pp_stmt)
-                (stmt_to_statements nas);
+                (stmt_to_statements ss);
                 Out_channel.close oc ) ;
               exit 0 
         )

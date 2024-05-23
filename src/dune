@@ -13,6 +13,7 @@
   f0inline
   f0rename
   f1normalize
+  f2simplify
   context
   z3_utils
   ast
