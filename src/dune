@@ -6,8 +6,8 @@
  (modules Lexer))
 
 (library
- (name algaroba_lib)
- (public_name algaroba.algaroba_lib)
+ (name finiteroba_lib)
+ (public_name finiteroba.finiteroba_lib)
  (modules
   finite_reduction
   f0inline

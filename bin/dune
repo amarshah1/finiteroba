@@ -3,7 +3,7 @@
  (public_name finiteroba)
  (modes exe)
  (modules finiteroba)
- (libraries core algaroba_lib landmarks)
+ (libraries core finiteroba_lib landmarks)
  (preprocess
   (pps ppx_let landmarks-ppx --auto))
  (flags
@@ -14,7 +14,7 @@
  (public_name test)
  (modes exe)
  (modules test)
- (libraries core algaroba_lib landmarks)
+ (libraries core finiteroba_lib landmarks)
  (instrumentation (backend landmarks --auto))
  (preprocess
   (pps ppx_let landmarks-ppx --auto))

@@ -1,10 +1,10 @@
-module PA = Algaroba_lib.Ast
-module Smtlib = Algaroba_lib.Smtlib_utils.V_2_6
+module PA = Finiteroba_lib.Ast
+module Smtlib = Finiteroba_lib.Smtlib_utils.V_2_6
 open Core
-open Algaroba_lib.Context
-open Algaroba_lib.Finite_reduction
-open Algaroba_lib.Z3_utils
-open Algaroba_lib.F1normalize
+open Finiteroba_lib.Context
+open Finiteroba_lib.Finite_reduction
+open Finiteroba_lib.Z3_utils
+open Finiteroba_lib.F1normalize
 
 
 (* let _ = reset_ctx () need to reset the context beforehand *)

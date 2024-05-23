@@ -1,10 +1,10 @@
 (lang dune 3.7)
 (using menhir 2.1)
-(name algaroba)
+(name finiteroba)
 (version 0.1)
 (generate_opam_files true)
 (package
- (name algaroba)
+ (name finiteroba)
  (depends 
   (ocaml (>= 4.12))
   (z3 (>= 4.8))
