@@ -286,12 +286,12 @@ let fpf = Format.fprintf
 let pp_list pp out l =
   let rec aux l =
     match l with
-    | x :: (_ :: _ as l) ->
+    | [] -> ()
+    (* | [x] -> pp out x *)
+    | x :: l ->
       pp out x;
       Format.fprintf out "@ ";
       aux l
-    | x :: [] -> pp out x
-    | [] -> ()
   in
   aux l
 

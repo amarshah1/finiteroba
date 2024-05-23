@@ -4,7 +4,6 @@ open Hashtbl
 open Context
 (* module StrTbl = CCHashtbl.Make(CCString) *)
 
-(* var args (sub_term : PA.term) *)
 let rec rename_vars_term (substitutions : (string, string) Hashtbl.t) (acc_term : PA.term) : PA.term  =
   match acc_term with
   | Const v ->
@@ -41,7 +40,12 @@ let rec rename_vars_term (substitutions : (string, string) Hashtbl.t) (acc_term 
   | And terms -> And (List.map (rename_vars_term substitutions) terms)
   | Or terms -> Or (List.map (rename_vars_term substitutions) terms)
   | Not t -> Not (rename_vars_term substitutions t)
-  | Distinct terms -> Distinct (List.map (rename_vars_term substitutions) terms)
+  | Distinct terms -> 
+    (*this will also convert distinct to a quadratic number of disequalites*)
+    let disequalities = List.map (fun (x, y) -> PA.Not (PA.Eq (x, y))) (List.combine terms terms) in
+    PA.And (List.map (rename_vars_term substitutions) disequalities)
+    
+    (* Distinct (List.map (rename_vars_term substitutions) terms) *)
   | Cast (t, ty) -> Cast (rename_vars_term substitutions t, ty)
   | Forall (bindings, t) -> 
     let substitutions_copy = Hashtbl.copy substitutions in 

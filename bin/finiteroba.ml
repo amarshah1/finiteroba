@@ -45,13 +45,31 @@ let speclist =
             | Ok f -> f
             | Error _ -> []
           in
+
+          (* Delete below *)
+
+          (* let rec check_for_check_sat = function 
+            | PA.Stmt_check_sat :: _ -> "CHECK-SAT-EXISTS"  
+            | _ :: rest -> check_for_check_sat rest 
+            | _ -> "CHECK-SAT-DOESNT-EXIST" 
+          in 
+          print_endline (check_for_check_sat (List.map stmt_list ~f:statement_to_stmt));
+        
+          let oc = Out_channel.create !output_file in
+          let fmt = Format.formatter_of_out_channel oc in
+          Format.fprintf fmt "@[<hv>%a@]" (PA.pp_list PA.pp_stmt)
+                stmt_list;
           print_time before "Parsing time" ;
-          let before = Core.Time.now () in
+          let before = Core.Time.now () in *)
           (*INLINING seems to be really bad efficiency wise, so we won't do it rn*)
           (* could keep this as an optimization for the future -> inlining + CSE could be good*)
           let rs =  rename_vars_statements (List.map stmt_list ~f:statement_to_stmt) in
           let before = Core.Time.now () in
-          print_time before "Renmae time" ;
+          print_time before "Rename time" ;
+          (* Note: Inlining statements screws up performance *)
+          (* let is = inline_statements rs in 
+          let before = Core.Time.now () in
+          print_time before "Inline time" ; *)
           let ns =  normalize_statements rs in
           let before = Core.Time.now () in
           print_time before "Convert to NNF time" ;
@@ -77,7 +95,7 @@ let speclist =
                 print_time before "Reduce axioms time" ;
                 (* Format.pp_print_string fmt (Z3.Solver.to_string solver) ; *)
                 Format.fprintf fmt "@[<hv>%a@]" (PA.pp_list PA.pp_stmt)
-                (stmt_to_statements nas) ;
+                (stmt_to_statements nas);
                 Out_channel.close oc ) ;
               exit 0 
         )

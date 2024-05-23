@@ -78,6 +78,7 @@ module Ctx = struct
     mutable adt_cycle_list: adt_with_dependencies StrTbl.t;
     mutable var_rename_index: int;
     mutable vars_created: int;
+    mutable array_placeholder_number: int;
     set_logic: string;
   }
 
@@ -90,6 +91,7 @@ module Ctx = struct
     adt_cycle_list = StrTbl.create 32;
     var_rename_index = 0;
     vars_created = 0;
+    array_placeholder_number = 0;
     set_logic = "UFBV";
   }
 
@@ -115,6 +117,9 @@ module Ctx = struct
   let increment_vars_created () : unit = 
     t.vars_created <- t.vars_created + 1
 
+  let increment_array_placeholder_number () : unit = 
+    t.array_placeholder_number <- t.array_placeholder_number + 1
+
 end;;
 
 (*General helper functions*)
@@ -125,7 +130,7 @@ let statement_to_stmts (statements : PA.statement list) : PA.stmt list =
   let rec aux statements acc = 
     begin match statements with
       | statement :: rest -> aux rest ((statement.PA.stmt) :: acc)
-      | _ -> acc
+      | [] -> acc
     end in 
   List.rev (aux statements [])
 

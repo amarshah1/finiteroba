@@ -55,6 +55,7 @@ let rec compute_selector_lengths selectors =
     in 
   aux 0 selectors
 
+(*TODO: I think I can just completely get rid of the disequaliyt case and just have an input to the equality case be whether we stick a not in the front*)
 let rec get_equality_function_body (x : PA.term) (y: PA.term) cstors disallowed_tags total_length tag_length ?(offset = 0) =
   let disallow_tags = 
     if (tag_length = 0) then []
@@ -63,15 +64,17 @@ let rec get_equality_function_body (x : PA.term) (y: PA.term) cstors disallowed_
   let main_or = 
     PA.Or (List.map 
           (fun (cstor : PA.cstor) -> 
+            print_endline ("INSIDE OR WITH CONSTRUCTOR " ^ cstor.cstor_name);
             let cstor_record = StrTbl.find Ctx.t.cstors cstor.cstor_name in 
             let cstor_start_pos = cstor_record.start_pos in
-            let extra_lengths_equality = if cstor_record.adt_length  = cstor_record.total_length - tag_length
+            (* I believe that we do not actually need this*)
+            (* let extra_lengths_equality = if cstor_record.adt_length  = cstor_record.total_length - tag_length
                                           then []
                                           else (
                                             [PA.Eq ((PA.Bitvec (PA.Extract (cstor_record.total_length - tag_length + offset, cstor_record.adt_length + offset), [x]))
                                             ,(PA.Bitvec (PA.Extract (cstor_record.total_length - tag_length  + offset, cstor_record.adt_length + offset), [y])))]
                                           )
-              in
+              in *)
             let recursive_step =
                 List.filter_map 
                   (fun sel ->
@@ -80,6 +83,7 @@ let rec get_equality_function_body (x : PA.term) (y: PA.term) cstors disallowed_
                       begin match original_return_ty with 
                         | PA.Ty_app (f, []) ->
                             begin match StrTbl.find_opt Ctx.t.finite_adts f with 
+                              (*TODO: I need to handle the array, bitvector, bool case here *)
                               | Some finite_adt_record -> 
                                   let inner_stmts = get_equality_function_body x y finite_adt_record.cstors finite_adt_record.disallowed_tags finite_adt_record.size finite_adt_record.tag_length ~offset:(cstor_start_pos + sel_record.start_pos) in 
                                   Some inner_stmts
@@ -90,19 +94,155 @@ let rec get_equality_function_body (x : PA.term) (y: PA.term) cstors disallowed_
                     )
                   (StrTbl.keys_list cstor_record.selectors)
           in
+          let tag = cstor_record.tag in
           let tags_equal = if tag_length = 0 then []
                             else [(PA.Eq ((PA.Bitvec (PA.Extract (cstor_record.total_length - 1 + offset, cstor_record.total_length - tag_length + offset), [x]))
-                            ,(PA.Bitvec (PA.Extract (cstor_record.total_length - 1 + offset, cstor_record.total_length - tag_length + offset), [y]))))]
+                                  ,(PA.Bitvec (PA.Extract (cstor_record.total_length - 1 + offset, cstor_record.total_length - tag_length + offset), [y]))))
+                                  ;PA.Eq ((PA.Bitvec (PA.Extract (cstor_record.total_length - 1 + offset, cstor_record.total_length - tag_length + offset), [x]))
+                                  , PA.Const ("#b" ^ tag))]
                           in 
-            if recursive_step = [] then PA.And (tags_equal @ extra_lengths_equality)
-            else PA.And (tags_equal @ [PA.And recursive_step] @ extra_lengths_equality)
+             PA.And (tags_equal @ recursive_step) (*@ extra_lengths_equality*)
             )
           cstors)
         in
       PA.And (main_or::disallow_tags)
 
 
-let replace_adt_array_ty ?(name = "") (ty: PA.ty) =
+let rec get_disequality_function_body (x : PA.term) (y: PA.term) cstors disallowed_tags total_length tag_length ?(offset = 0) =
+  print_string "PRINTING TAG LENGTH";print_int tag_length; print_newline ();
+  let disallow_tags_x = 
+    if (tag_length = 0) then []
+    else (List.map (fun tag -> PA.Not (PA.Eq (PA.Bitvec (PA.Extract (total_length - 1 + offset, total_length - tag_length + offset), [x]),
+                                              PA.Const ("#b" ^ tag)))) disallowed_tags) in 
+  let disallow_tags_y =
+    if (tag_length = 0) then []
+    else (List.map (fun tag -> PA.Not (PA.Eq (PA.Bitvec (PA.Extract (total_length - 1 + offset, total_length - tag_length + offset), [y]), 
+                                              PA.Const ("#b" ^ tag)))) disallowed_tags) in  
+    let main_or = 
+      PA.Or (List.map 
+            (fun (cstor : PA.cstor) -> 
+              print_endline ("INSIDE OR WITH CONSTRUCTOR " ^ cstor.cstor_name);
+              let cstor_record = StrTbl.find Ctx.t.cstors cstor.cstor_name in 
+              let cstor_start_pos = cstor_record.start_pos in
+              (*I think we don't actually need this but I might be wrong. *)
+              let extra_lengths_equality = if cstor_record.adt_length  = cstor_record.total_length - tag_length
+                                            then []
+                                            else (
+                                              [PA.Eq ((PA.Bitvec (PA.Extract (cstor_record.total_length - tag_length + offset, cstor_record.adt_length + offset), [x]))
+                                              ,(PA.Bitvec (PA.Extract (cstor_record.total_length - tag_length  + offset, cstor_record.adt_length + offset), [y])))]
+                                            )
+                in
+              let recursive_step =
+                  List.filter_map 
+                    (fun sel ->
+                        let sel_record = StrTbl.find cstor_record.selectors sel in 
+                        let original_return_ty = sel_record.return_typ_original in 
+                        begin match original_return_ty with 
+                          | PA.Ty_app (f, []) ->
+                              begin match StrTbl.find_opt Ctx.t.finite_adts f with 
+                                | Some finite_adt_record -> 
+                                    let inner_stmts = get_disequality_function_body x y finite_adt_record.cstors finite_adt_record.disallowed_tags finite_adt_record.size finite_adt_record.tag_length ~offset:(cstor_start_pos + sel_record.start_pos) in 
+                                    Some inner_stmts
+                                | None -> None 
+                              end
+                          | _ -> None 
+                        end
+                      )
+                    (StrTbl.keys_list cstor_record.selectors)
+            in
+            let tags_equal = if tag_length = 0 then []
+                             else [(PA.Not (PA.Eq ((PA.Bitvec (PA.Extract (cstor_record.total_length - 1 + offset, cstor_record.total_length - tag_length + offset), [x]))
+                                    ,(PA.Bitvec (PA.Extract (cstor_record.total_length - 1 + offset, cstor_record.total_length - tag_length + offset), [y])))))]
+                            in 
+              (* let cstor_length = List.fold_left (fun acc (_,_, x) -> acc + x) 0 sel_info in  *)
+              PA.And (PA.Or (tags_equal @ recursive_step) :: extra_lengths_equality)
+              )
+            cstors)
+        in
+      PA.And (main_or::disallow_tags_x @ disallow_tags_y)
+
+let rec get_equality_function_for_array x y index_type value_type ?(offset = 0) ?(offset_end = 0) = 
+  let length_of_array = 
+    match index_type with 
+      | PA.Ty_bv bv_index_size -> exp 2 bv_index_size (*TODO: this will start to give overflow issues*)
+      | PA.Ty_bool -> 2
+      | _ -> raise (UnsupportedQuery "We only support arrays indexed by bitvectors or bools")
+  in
+  let indices = List.init length_of_array (fun x -> x) in 
+  begin match value_type with 
+    | PA.Ty_app (f, []) -> 
+      begin match StrTbl.find_opt Ctx.t.finite_adts f with 
+        | Some finite_adt_record -> 
+            let length = finite_adt_record.size in 
+            PA.And (
+            List.map
+              (fun index -> get_equality_function_body x y finite_adt_record.cstors finite_adt_record.disallowed_tags finite_adt_record.size finite_adt_record.tag_length ~offset:(index * length))
+              indices
+            )
+        | None -> if (offset = 0 && offset_end = 0) then (
+                    PA.Eq (x, y)
+                  ) else (
+                    PA.Eq ((PA.Bitvec (PA.Extract (offset_end, offset), [x])), 
+                        ((PA.Bitvec (PA.Extract (offset_end, offset), [y]))))
+                  )
+      end
+    | PA.Ty_array (t1, t2) -> 
+        let length = match (replace_adt_array_ty value_type) with PA.Ty_bv n -> n | _ -> raise (UnsupportedQuery "replace_adt_array_ty should return a bv") in 
+        PA.And (
+          List.map
+            (fun index -> get_equality_function_for_array x y t1 t2 ~offset:(index * length) ~offset_end:((index + 1) * length - 1))
+            indices
+          )
+    | _ -> if (offset = 0 && offset_end = 0) then (
+            PA.Eq (x, y)
+          ) else (
+            PA.Eq ((PA.Bitvec (PA.Extract (offset_end, offset), [x])), 
+                 ((PA.Bitvec (PA.Extract (offset_end, offset), [y]))))
+          )
+  end
+
+and get_disequality_function_for_array x y index_type value_type ?(offset = 0) ?(offset_end = 0) = 
+    let length_of_array = 
+      match index_type with 
+        | PA.Ty_bv bv_index_size -> exp 2 bv_index_size (*TODO: this will start to give overflow issues*)
+        | PA.Ty_bool -> 2
+        | _ -> raise (UnsupportedQuery "We only support arrays indexed by bitvectors or bools")
+    in
+    let indices = List.init length_of_array (fun x -> x) in 
+    begin match value_type with 
+      | PA.Ty_app (f, []) -> 
+        begin match StrTbl.find_opt Ctx.t.finite_adts f with 
+          | Some finite_adt_record -> 
+              let length = finite_adt_record.size in 
+              (*TODO: I now think that this can be chacterized by *)
+              PA.Or (
+                List.map
+                  (fun index -> get_disequality_function_body x y finite_adt_record.cstors finite_adt_record.disallowed_tags finite_adt_record.size finite_adt_record.tag_length ~offset:(index * length + offset) )
+                  indices
+                )
+          | None -> if (offset = 0 && offset_end = 0) then (
+                      PA.Not (PA.Eq (x, y))
+                    ) else (
+                      PA.Not (PA.Eq ((PA.Bitvec (PA.Extract (offset_end, offset), [x])), 
+                                    ((PA.Bitvec (PA.Extract (offset_end, offset), [y])))))
+                    )
+        end
+      | PA.Ty_array (t1, t2) -> 
+          let length = match (replace_adt_array_ty value_type) with PA.Ty_bv n -> n | _ -> raise (UnsupportedQuery "replace_adt_array_ty should return a bv") in 
+            PA.Or (
+              List.map
+                (fun index -> get_disequality_function_for_array x y t1 t2 ~offset:(index * length + offset) ~offset_end:((index + 1) * length - 1))
+                indices
+              )
+      | _ -> if (offset = 0 && offset_end = 0) then (
+                PA.Not (PA.Eq (x, y))
+              ) else (
+                PA.Not (PA.Eq ((PA.Bitvec (PA.Extract (offset_end, offset), [x])), 
+                              ((PA.Bitvec (PA.Extract (offset_end, offset), [y])))))
+      )
+    end
+
+and replace_adt_array_ty ?(name = "") (ty: PA.ty) =
   match ty with 
     | PA.Ty_app (s, []) ->
       print_endline ("in app case with " ^ name);
@@ -123,8 +263,8 @@ let replace_adt_array_ty ?(name = "") (ty: PA.ty) =
           let item_length = find_ty_bitvec_size t2 in 
           let num_items = exp 2 bv_index_size in 
           let array_length = item_length * num_items in 
-          let equality_fun = get_equality_func_for_array t1 t2 in 
-          let disequality_fun = get_disequality_func_for_array t1 t2 in 
+          let equality_fun = fun x y ->  get_equality_function_for_array x y t1 t2 ~offset:0 ~offset_end:0 in 
+          let disequality_fun = fun x y -> get_disequality_function_for_array x y t1 t2 ~offset:0 ~offset_end:0 in 
           let (array_term : Ctx.array_term) = {array_length = array_length;
                                                 num_items = num_items;
                                                 array_bv_index_size = bv_index_size;
@@ -142,8 +282,8 @@ let replace_adt_array_ty ?(name = "") (ty: PA.ty) =
           let item_length = find_ty_bitvec_size t2 in 
           let num_items = 2 in 
           let array_length = item_length * num_items in 
-          let equality_fun = get_equality_func_for_array t1 t2 in 
-          let disequality_fun = get_disequality_func_for_array t1 t2 in 
+          let equality_fun = fun x y -> get_equality_function_for_array x y t1 t2 ~offset:0 ~offset_end:0 in 
+          let disequality_fun = fun x y -> get_disequality_function_for_array x y t1 t2 ~offset:0 ~offset_end:0 in 
           let (array_term : Ctx.array_term) = {array_length = array_length;
                                               num_items = 2;
                                               array_bv_index_size = 1;
@@ -286,64 +426,7 @@ let rec make_cstor_interpretations (cstors : PA.cstor list) index size_acc cstor
         let new_definitions = (*cstor_ty_decl::selectors_ty_decl @*) cstor_def @ selectors_non_bv_ty_decl @ selectors_def (* @ [testers_ty_decl] *) @ [testers_def] @ enum_case in
         make_cstor_interpretations rest (index + 1) (size_acc + adt_length) cstor_tag_length adt_name total_length disallowed_tags (acc @ new_definitions)
     | [] -> acc
-  end
-
-  
-
-
-(*TODO: fix recursive case here -> it's erroring*)
-let rec get_disequality_function_body (x : PA.term) (y: PA.term) cstors disallowed_tags total_length tag_length ?(offset = 0) =
-  print_string "PRINTING TAG LENGTH";print_int tag_length; print_newline ();
-  let disallow_tags_x = 
-    if (tag_length = 0) then []
-    else (List.map (fun tag -> PA.Not (PA.Eq (PA.Bitvec (PA.Extract (total_length - 1 + offset, total_length - tag_length + offset), [x]),
-                                              PA.Const ("#b" ^ tag)))) disallowed_tags) in 
-  let disallow_tags_y =
-    if (tag_length = 0) then []
-    else (List.map (fun tag -> PA.Not (PA.Eq (PA.Bitvec (PA.Extract (total_length - 1 + offset, total_length - tag_length + offset), [y]), 
-                                              PA.Const ("#b" ^ tag)))) disallowed_tags) in  
-    let main_or = 
-      PA.Or (List.map 
-            (fun (cstor : PA.cstor) -> 
-              let cstor_record = StrTbl.find Ctx.t.cstors cstor.cstor_name in 
-              let cstor_start_pos = cstor_record.start_pos in
-              let extra_lengths_equality = if cstor_record.adt_length  = cstor_record.total_length - tag_length
-                                            then []
-                                            else (
-                                              [PA.Eq ((PA.Bitvec (PA.Extract (cstor_record.total_length - tag_length + offset, cstor_record.adt_length + offset), [x]))
-                                              ,(PA.Bitvec (PA.Extract (cstor_record.total_length - tag_length  + offset, cstor_record.adt_length + offset), [y])))]
-                                            )
-                in
-              let recursive_step =
-                  List.filter_map 
-                    (fun sel ->
-                        let sel_record = StrTbl.find cstor_record.selectors sel in 
-                        let original_return_ty = sel_record.return_typ_original in 
-                        begin match original_return_ty with 
-                          | PA.Ty_app (f, []) ->
-                              begin match StrTbl.find_opt Ctx.t.finite_adts f with 
-                                | Some finite_adt_record -> 
-                                    let inner_stmts = get_disequality_function_body x y finite_adt_record.cstors finite_adt_record.disallowed_tags finite_adt_record.size finite_adt_record.tag_length ~offset:(cstor_start_pos + sel_record.start_pos) in 
-                                    Some inner_stmts
-                                | None -> None 
-                              end
-                          | _ -> None 
-                        end
-                      )
-                    (StrTbl.keys_list cstor_record.selectors)
-            in
-            let tags_equal = if tag_length = 0 then []
-                             else [(PA.Not (PA.Eq ((PA.Bitvec (PA.Extract (cstor_record.total_length - 1 + offset, cstor_record.total_length - tag_length + offset), [x]))
-                             ,(PA.Bitvec (PA.Extract (cstor_record.total_length - 1 + offset, cstor_record.total_length - tag_length + offset), [y])))))]
-                            in 
-              (* let cstor_length = List.fold_left (fun acc (_,_, x) -> acc + x) 0 sel_info in  *)
-              if recursive_step = [] then PA.And (tags_equal @ extra_lengths_equality)
-              else PA.And (tags_equal @ [PA.Or recursive_step] @ extra_lengths_equality)
-              )
-            cstors)
-        in
-      PA.And (main_or::disallow_tags_x @ disallow_tags_y)
-          
+  end          
 
 let simplify_datatype (name: string) (cstors: PA.cstor list) = 
   let cstor_tag_length = Int.max 1 (log2_ceiling (List.length cstors)) in
@@ -415,8 +498,16 @@ let rec get_array_info = function
   | PA.Const a -> print_string ("In Const " ^ a);StrTbl.find_opt Ctx.t.array_terms a 
   | PA.App (f, _) -> print_string ("In App " ^ f);StrTbl.find_opt Ctx.t.array_terms f
   | PA.Array (PA.Store, [array; _; _]) -> get_array_info array
-  | PA.Array (PA.Select, [_; _]) -> 
-      raise (UnsupportedQuery " We do not currently support Select in get_array_info")
+  | PA.Array (PA.Select, [array; _]) -> 
+      let array_record = get_array_info array |> Option.get in 
+      let subtype = array_record.array_subtype in 
+      let placeholder_name = "array_placeholder_" ^ (string_of_int Ctx.t.array_placeholder_number) in
+      Ctx.increment_array_placeholder_number ();
+      let _ = replace_adt_array_ty ~name:placeholder_name subtype in 
+      StrTbl.find_opt Ctx.t.array_terms placeholder_name
+      (* match reduced_subtype with  *)
+      (*TODO: We need to change this somehow*)
+      (* raise (UnsupportedQuery " We do not currently support Select in get_array_info") *)
   | If (_, t, _) -> get_array_info t
   | Let (_, _) ->
       raise (UnsupportedQuery " We do not currently support Let in get_array_info")
@@ -554,7 +645,7 @@ let rec replace_equalities term =
       | None -> 
           begin match (find_disequality_function t2) with 
             | Some f -> f (replace_equalities t1) (replace_equalities t2)
-            | None -> PA.Eq (replace_equalities t1, replace_equalities t2)
+            | None -> PA.Not (PA.Eq (replace_equalities t1, replace_equalities t2))
           end
     end
     | Forall (bindings, term) ->
