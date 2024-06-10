@@ -49,8 +49,9 @@ rule token = parse
   | "=" { EQ }
   | "@" { AT }
   | "!" { BANG }
-  | "bv0" { BV0 }
-  | "bv3" { BV3 }
+  (* | "bv0" { BV0 }
+  | "bv3" { BV3 } *)
+  | "bv" ['0'-'9']+ as bv { BVCONST(Lexing.lexeme lexbuf) }
   | "zero_extend" {ZERO_EXTEND} (* sign_extend and extract come from BV but are treated different because they are parametric*)
   | "sign_extend" {SIGN_EXTEND} (* sign_extend and extract come from BV but are treated different because they are parametric*)
   | "extract" {EXTRACT}

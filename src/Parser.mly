@@ -57,8 +57,10 @@
       ("bvurem", bitvec_op A.BVURem);
       ("bvudiv", bitvec_op A.BVUDiv);
       ("bv2nat", bitvec_op A.BV2nat);
+      ("bvuge", bitvec_op A.BVUge);
       ("select", array_op A.Select);
       ("store", array_op A.Store);
+
     ];
     tbl
 
@@ -90,8 +92,7 @@
 %token IS
 %token AT
 %token BANG
-%token BV0
-%token BV3
+%token <string>BVCONST
 %token ZERO_EXTEND
 %token SIGN_EXTEND
 %token EXTRACT
@@ -417,15 +418,10 @@ composite_term:
   | LEFT_PAREN f=IDENT args=term+ RIGHT_PAREN {
     let loc = Loc.mk_pos $startpos $endpos in
     apply_const ~loc f args }
-  | LEFT_PAREN WILDCARD BV3 i=IDENT RIGHT_PAREN {
+  | LEFT_PAREN WILDCARD i=BVCONST n=IDENT RIGHT_PAREN {
     let loc = Loc.mk_pos $startpos $endpos in
-    try (Ast.bitvec (Ast.BV3 (int_of_string i)) []) with _ -> 
-      Ast.parse_errorf ~loc "expected an integer argument for bv3, not %s" i
-  }
-  | LEFT_PAREN WILDCARD BV0 i=IDENT RIGHT_PAREN {
-    let loc = Loc.mk_pos $startpos $endpos in
-    try (Ast.bitvec (Ast.BV0 (int_of_string i)) []) with _ -> 
-      Ast.parse_errorf ~loc "expected an integer argument for bv0, not %s" i
+    try (Ast.bitvec (Ast.BVconst (String.sub i 2 (String.length i - 2), int_of_string n)) []) with _ -> 
+      Ast.parse_errorf ~loc "expected an integer argument for bv, not %s" n
   }
   | LEFT_PAREN LEFT_PAREN WILDCARD ZERO_EXTEND i=IDENT RIGHT_PAREN args=term+ RIGHT_PAREN {
     let loc = Loc.mk_pos $startpos $endpos in

@@ -2,24 +2,25 @@ module PA = Ast
 exception UnsupportedQuery of string
 open Context
 
-let exp (a : int) (b : int) = int_of_float ((float_of_int a) ** (float_of_int b))
-let log_base (base : int) (value : int) = ((log (float_of_int value)) /. (log (float_of_int base)))
 
-let rec int_to_bitvec (bitvec_size : int) i = 
-  (* print_endline ("bitvec size is " ^ (string_of_int bitvec_size) ^ " and integer is " ^ (string_of_int i)); *)
-  if (bitvec_size <= 0) 
-    then (if i = 0 then "" 
-          else raise (UnsupportedQuery ("Bitvec size " ^ (string_of_int bitvec_size) ^ " not large enough for integer " ^ (string_of_int i))))
-  else (
-    if (log_base 2 i >= (float_of_int (bitvec_size - 1)))
-    then (
-      (* print_endline "add 1"; *)
-      "1" ^ (int_to_bitvec (bitvec_size - 1) (i - (exp 2 (bitvec_size - 1))))
-    ) else (
-      (* print_endline "add 0"; *)
-      "0" ^ (int_to_bitvec (bitvec_size - 1) i)
+(* let int_to_bitvec (bitvec_size : int) i = 
+  let rec aux bitvec_size i acc = 
+    if (bitvec_size <= 0) 
+      then (if i = 0 then "" 
+            else raise (UnsupportedQuery ("Bitvec size " ^ (string_of_int bitvec_size) ^ " not large enough for integer " ^ (string_of_int i))))
+    else (
+      if (log_base 2 i >= (float_of_int (bitvec_size - 1)))
+      then (
+        (aux (bitvec_size - 1) (i - (exp 2 (bitvec_size - 1))) acc ^ "1")
+      ) else (
+        (aux (bitvec_size - 1) i acc ^ "0")
+      )
     )
-  )
+  in
+  aux bitvec_size i ""  *)
+
+let int_to_bitvec (bitvec_size : int) i = 
+  PA.Bitvec (PA.BVconst (string_of_int i, bitvec_size), [])
 
 let log2_ceiling (n : int) : int = int_of_float (Float.ceil (Float.log2 (float_of_int n)))
 
@@ -55,18 +56,12 @@ let rec compute_selector_lengths selectors =
     in 
   aux 0 selectors
 
-(*TODO: I think I can just completely get rid of the disequaliyt case and just have an input to the equality case be whether we stick a not in the front*)
-let rec get_equality_function_body (x : PA.term) (y: PA.term) cstors disallowed_tags total_length tag_length ?(offset = 0) =
-  let disallow_tags = 
-    if (tag_length = 0) then []
-    else (List.map (fun tag -> PA.Not (PA.Eq (PA.Bitvec (PA.Extract (total_length - 1 + offset, total_length - tag_length + offset), [x]),
-                                              PA.Const ("#b" ^ tag)))) disallowed_tags) in 
-  let main_or = 
-    PA.Or (List.map 
+let rec get_equality_function_body (x : PA.term) (y: PA.term) cstors =
+  PA.Or (List.map 
           (fun (cstor : PA.cstor) -> 
             print_endline ("INSIDE OR WITH CONSTRUCTOR " ^ cstor.cstor_name);
             let cstor_record = StrTbl.find Ctx.t.cstors cstor.cstor_name in 
-            let cstor_start_pos = cstor_record.start_pos in
+            (* let cstor_start_pos = cstor_record.start_pos in *)
             (* I believe that we do not actually need this*)
             (* let extra_lengths_equality = if cstor_record.adt_length  = cstor_record.total_length - tag_length
                                           then []
@@ -85,7 +80,7 @@ let rec get_equality_function_body (x : PA.term) (y: PA.term) cstors disallowed_
                             begin match StrTbl.find_opt Ctx.t.finite_adts f with 
                               (*TODO: I need to handle the array, bitvector, bool case here *)
                               | Some finite_adt_record -> 
-                                  let inner_stmts = get_equality_function_body x y finite_adt_record.cstors finite_adt_record.disallowed_tags finite_adt_record.size finite_adt_record.tag_length ~offset:(cstor_start_pos + sel_record.start_pos) in 
+                                  let inner_stmts = get_equality_function_body (PA.App (sel, [x])) (PA.App (sel, [y])) finite_adt_record.cstors  in 
                                   Some inner_stmts
                               | None -> None 
                             end
@@ -94,202 +89,199 @@ let rec get_equality_function_body (x : PA.term) (y: PA.term) cstors disallowed_
                     )
                   (StrTbl.keys_list cstor_record.selectors)
           in
-          let tag = cstor_record.tag in
+          (* let tag = cstor_record.tag in
           let tags_equal = if tag_length = 0 then []
                             else [(PA.Eq ((PA.Bitvec (PA.Extract (cstor_record.total_length - 1 + offset, cstor_record.total_length - tag_length + offset), [x]))
                                   ,(PA.Bitvec (PA.Extract (cstor_record.total_length - 1 + offset, cstor_record.total_length - tag_length + offset), [y]))))
                                   ;PA.Eq ((PA.Bitvec (PA.Extract (cstor_record.total_length - 1 + offset, cstor_record.total_length - tag_length + offset), [x]))
-                                  , PA.Const ("#b" ^ tag))]
-                          in 
-             PA.And (tags_equal @ recursive_step) (*@ extra_lengths_equality*)
+                                  , tag)]
+                          in  *)
+             PA.And (PA.App ("is-" ^ cstor.cstor_name, [x]) :: PA.App ("is-" ^ cstor.cstor_name, [y]) :: recursive_step) (*@ extra_lengths_equality*)
             )
           cstors)
-        in
-      PA.And (main_or::disallow_tags)
 
 
-let rec get_disequality_function_body (x : PA.term) (y: PA.term) cstors disallowed_tags total_length tag_length ?(offset = 0) =
-  print_string "PRINTING TAG LENGTH";print_int tag_length; print_newline ();
-  let disallow_tags_x = 
-    if (tag_length = 0) then []
-    else (List.map (fun tag -> PA.Not (PA.Eq (PA.Bitvec (PA.Extract (total_length - 1 + offset, total_length - tag_length + offset), [x]),
-                                              PA.Const ("#b" ^ tag)))) disallowed_tags) in 
-  let disallow_tags_y =
-    if (tag_length = 0) then []
-    else (List.map (fun tag -> PA.Not (PA.Eq (PA.Bitvec (PA.Extract (total_length - 1 + offset, total_length - tag_length + offset), [y]), 
-                                              PA.Const ("#b" ^ tag)))) disallowed_tags) in  
-    let main_or = 
-      PA.Or (List.map 
-            (fun (cstor : PA.cstor) -> 
-              print_endline ("INSIDE OR WITH CONSTRUCTOR " ^ cstor.cstor_name);
-              let cstor_record = StrTbl.find Ctx.t.cstors cstor.cstor_name in 
-              let cstor_start_pos = cstor_record.start_pos in
-              (*I think we don't actually need this but I might be wrong. *)
-              let extra_lengths_equality = if cstor_record.adt_length  = cstor_record.total_length - tag_length
-                                            then []
-                                            else (
-                                              [PA.Eq ((PA.Bitvec (PA.Extract (cstor_record.total_length - tag_length + offset, cstor_record.adt_length + offset), [x]))
-                                              ,(PA.Bitvec (PA.Extract (cstor_record.total_length - tag_length  + offset, cstor_record.adt_length + offset), [y])))]
-                                            )
-                in
-              let recursive_step =
-                  List.filter_map 
-                    (fun sel ->
-                        let sel_record = StrTbl.find cstor_record.selectors sel in 
-                        let original_return_ty = sel_record.return_typ_original in 
-                        begin match original_return_ty with 
-                          | PA.Ty_app (f, []) ->
-                              begin match StrTbl.find_opt Ctx.t.finite_adts f with 
-                                | Some finite_adt_record -> 
-                                    let inner_stmts = get_disequality_function_body x y finite_adt_record.cstors finite_adt_record.disallowed_tags finite_adt_record.size finite_adt_record.tag_length ~offset:(cstor_start_pos + sel_record.start_pos) in 
-                                    Some inner_stmts
-                                | None -> None 
-                              end
-                          | _ -> None 
-                        end
-                      )
-                    (StrTbl.keys_list cstor_record.selectors)
-            in
-            let tags_equal = if tag_length = 0 then []
-                             else [(PA.Not (PA.Eq ((PA.Bitvec (PA.Extract (cstor_record.total_length - 1 + offset, cstor_record.total_length - tag_length + offset), [x]))
-                                    ,(PA.Bitvec (PA.Extract (cstor_record.total_length - 1 + offset, cstor_record.total_length - tag_length + offset), [y])))))]
-                            in 
-              (* let cstor_length = List.fold_left (fun acc (_,_, x) -> acc + x) 0 sel_info in  *)
-              PA.And (PA.Or (tags_equal @ recursive_step) :: extra_lengths_equality)
-              )
-            cstors)
-        in
-      PA.And (main_or::disallow_tags_x @ disallow_tags_y)
-
-let rec get_equality_function_for_array x y index_type value_type ?(offset = 0) ?(offset_end = 0) = 
-  let length_of_array = 
-    match index_type with 
-      | PA.Ty_bv bv_index_size -> exp 2 bv_index_size (*TODO: this will start to give overflow issues*)
-      | PA.Ty_bool -> 2
-      | _ -> raise (UnsupportedQuery "We only support arrays indexed by bitvectors or bools")
-  in
-  let indices = List.init length_of_array (fun x -> x) in 
-  begin match value_type with 
-    | PA.Ty_app (f, []) -> 
-      begin match StrTbl.find_opt Ctx.t.finite_adts f with 
-        | Some finite_adt_record -> 
-            let length = finite_adt_record.size in 
-            PA.And (
-            List.map
-              (fun index -> get_equality_function_body x y finite_adt_record.cstors finite_adt_record.disallowed_tags finite_adt_record.size finite_adt_record.tag_length ~offset:(index * length))
-              indices
-            )
-        | None -> if (offset = 0 && offset_end = 0) then (
-                    PA.Eq (x, y)
-                  ) else (
-                    PA.Eq ((PA.Bitvec (PA.Extract (offset_end, offset), [x])), 
-                        ((PA.Bitvec (PA.Extract (offset_end, offset), [y]))))
-                  )
-      end
-    | PA.Ty_array (t1, t2) -> 
-        let length = match (replace_adt_array_ty value_type) with PA.Ty_bv n -> n | _ -> raise (UnsupportedQuery "replace_adt_array_ty should return a bv") in 
-        PA.And (
-          List.map
-            (fun index -> get_equality_function_for_array x y t1 t2 ~offset:(index * length) ~offset_end:((index + 1) * length - 1))
-            indices
-          )
-    | _ -> if (offset = 0 && offset_end = 0) then (
-            PA.Eq (x, y)
-          ) else (
-            PA.Eq ((PA.Bitvec (PA.Extract (offset_end, offset), [x])), 
-                 ((PA.Bitvec (PA.Extract (offset_end, offset), [y]))))
-          )
-  end
-
-and get_disequality_function_for_array x y index_type value_type ?(offset = 0) ?(offset_end = 0) = 
-    let length_of_array = 
-      match index_type with 
-        | PA.Ty_bv bv_index_size -> exp 2 bv_index_size (*TODO: this will start to give overflow issues*)
-        | PA.Ty_bool -> 2
-        | _ -> raise (UnsupportedQuery "We only support arrays indexed by bitvectors or bools")
-    in
-    let indices = List.init length_of_array (fun x -> x) in 
-    begin match value_type with 
-      | PA.Ty_app (f, []) -> 
-        begin match StrTbl.find_opt Ctx.t.finite_adts f with 
-          | Some finite_adt_record -> 
-              let length = finite_adt_record.size in 
-              (*TODO: I now think that this can be chacterized by *)
-              PA.Or (
-                List.map
-                  (fun index -> get_disequality_function_body x y finite_adt_record.cstors finite_adt_record.disallowed_tags finite_adt_record.size finite_adt_record.tag_length ~offset:(index * length + offset) )
-                  indices
-                )
-          | None -> if (offset = 0 && offset_end = 0) then (
-                      PA.Not (PA.Eq (x, y))
-                    ) else (
-                      PA.Not (PA.Eq ((PA.Bitvec (PA.Extract (offset_end, offset), [x])), 
-                                    ((PA.Bitvec (PA.Extract (offset_end, offset), [y])))))
-                    )
-        end
-      | PA.Ty_array (t1, t2) -> 
-          let length = match (replace_adt_array_ty value_type) with PA.Ty_bv n -> n | _ -> raise (UnsupportedQuery "replace_adt_array_ty should return a bv") in 
-            PA.Or (
-              List.map
-                (fun index -> get_disequality_function_for_array x y t1 t2 ~offset:(index * length + offset) ~offset_end:((index + 1) * length - 1))
-                indices
-              )
-      | _ -> if (offset = 0 && offset_end = 0) then (
-                PA.Not (PA.Eq (x, y))
-              ) else (
-                PA.Not (PA.Eq ((PA.Bitvec (PA.Extract (offset_end, offset), [x])), 
-                              ((PA.Bitvec (PA.Extract (offset_end, offset), [y])))))
+let rec get_function_app_body (f: (PA.term -> PA.term) option) (x: PA.term) (position : int) cstors = 
+  List.fold_left 
+  (fun (acc : PA.term) (cstor : PA.cstor) -> 
+    let cstor_record = StrTbl.find Ctx.t.cstors cstor.cstor_name in 
+    let base_term = 
+      if cstor_record.has_buffer then (
+        PA.Bitvec (PA.Concat, [cstor_record.tag; PA.Const (cstor.cstor_name ^ "_buffer")])
+      ) else (
+        cstor_record.tag
       )
-    end
+    in
+    let recursive_step =
+        List.fold_left 
+          (fun acc sel ->
+              let sel_record = StrTbl.find cstor_record.selectors sel in 
+              let original_return_ty = sel_record.return_typ_original in 
+              begin match original_return_ty with 
+                | PA.Ty_app (f, []) ->
+                    begin match StrTbl.find_opt Ctx.t.finite_adts f with 
+                      | Some finite_adt_record -> 
+                          let inner_term = get_function_app_body None (PA.App (sel, [x])) position finite_adt_record.cstors  in 
+                          PA.Bitvec (Concat, [acc; inner_term])
+                      | None -> PA.Bitvec (Concat, [acc; PA.App (sel, [x])])
+                    end
+                | _ -> PA.Bitvec (Concat, [acc; PA.App (sel, [x])]) 
+              end
+            )
+          base_term
+          cstor_record.selectors_list
+      in
+      let recursive_step_function_app = 
+        match f with 
+          | None -> recursive_step
+          | Some func -> func recursive_step in 
+      PA.If (PA.App ("is-" ^ cstor.cstor_name, [x]), recursive_step_function_app, acc)
+     (* PA.And (PA.App ("is-" ^ cstor.cstor_name, [x]) :: PA.App ("is-" ^ cstor.cstor_name, [y]) :: recursive_step)  *)
+    )
+  (match f with 
+    | None ->  x 
+    | Some func -> func x
+  )
+  cstors
 
 and replace_adt_array_ty ?(name = "") (ty: PA.ty) =
   match ty with 
-    | PA.Ty_app (s, []) ->
+    | PA.Ty_app (s, []) when StrTbl.mem Ctx.t.finite_adts s ->
+      let record = StrTbl.find Ctx.t.finite_adts s in 
       print_endline ("in app case with " ^ name);
-      begin match StrTbl.find_opt Ctx.t.finite_adts s with 
-        | Some record -> 
+      if (name <> "") then (
+        Ctx.add_adt_fun name s (PA.Ty_bv record.size)
+      );
+      PA.Ty_bv record.size 
+    | PA.Ty_array (t1, t2) when StrTbl.mem Ctx.t.array_selectors name -> 
+        print_endline ("in array case with " ^ name);
+        let returns_bool = match t2 with PA.Ty_bool -> true | _ -> false in 
+        let item_length = find_ty_bitvec_size t2 in 
+        begin match t1 with 
+          | PA.Ty_bv bv_index_size ->
+            print_endline ("in replace bv case with " ^ name);
+            print_endline ("the array_max_size is " ^ (string_of_int !array_max));
+            if (!array_max <> -1 && bv_index_size > !array_max) then (
+              (* if the array is too large, we don't translate it*)
+              let num_items = exp 2 bv_index_size in 
+              let array_length = item_length * num_items in 
+              let (array_term : Ctx.array_term) = {array_length = array_length;
+                                                  num_items = num_items;
+                                                  array_bv_index_size = bv_index_size;
+                                                  array_item_length = item_length;
+                                                  array_subtype = t2;
+                                                  returns_bool = returns_bool;
+                                                  (*TODO, I think these equality and disequality functions are more complicated if these are arrays, but idk*)
+                                                  bv_transform = false;
+                                                  equality_fun = (fun x y -> PA.Eq (x, y));
+                                                  disequality_fun = (fun x y -> PA.Not (PA.Eq (x, y)))} in 
+              if (name <> "") then (
+                StrTbl.add Ctx.t.array_terms name array_term
+              );
+              PA.Ty_array (t1, PA.Ty_bv item_length)
+            ) 
+            else (
+              raise (UnsupportedQuery "Not doing array reductinos right now")
+              (* let num_items = exp 2 bv_index_size in 
+              let array_length = item_length * num_items in 
+              let equality_fun = fun x y ->  get_equality_function_for_array x y t1 t2 ~offset:0 ~offset_end:0 in 
+              let disequality_fun = fun x y -> get_disequality_function_for_array x y t1 t2 ~offset:0 ~offset_end:0 in 
+              let (array_term : Ctx.array_term) = {array_length = array_length;
+                                                    num_items = num_items;
+                                                    array_bv_index_size = bv_index_size;
+                                                    array_item_length = item_length;
+                                                    array_subtype = t2;
+                                                    returns_bool = returns_bool;
+                                                    bv_transform = true;
+                                                    equality_fun = equality_fun;
+                                                    disequality_fun = disequality_fun} in 
+              if (name <> "") then (
+                StrTbl.add Ctx.t.array_terms name array_term
+              );
+              PA.Ty_bv array_length *)
+            )
+          | PA.Ty_bool -> 
+            print_endline "an array that returns bool";
+            let num_items = 2 in 
+            let array_length = item_length * num_items in 
+            let equality_fun = fun x y -> PA.Eq (x, y) (*get_equality_function_for_array x y t1 t2 ~offset:0 ~offset_end:0 in *) in
+            let disequality_fun = fun x y -> PA.Eq (x, y) (*get_disequality_function_for_array x y t1 t2 ~offset:0 ~offset_end:0 in*) in
+            let (array_term : Ctx.array_term) = {array_length = array_length;
+                                                num_items = 2;
+                                                array_bv_index_size = 1;
+                                                array_item_length = item_length;
+                                                array_subtype = t2;
+                                                returns_bool = returns_bool;
+                                                bv_transform = true;
+                                                equality_fun = equality_fun;
+                                                disequality_fun = disequality_fun} in 
             if (name <> "") then (
-              Ctx.add_adt_fun name s (PA.Ty_bv record.size)
+              StrTbl.add Ctx.t.array_terms name array_term
             );
-            PA.Ty_bv record.size 
-        | None -> ty
-      end
+            PA.Ty_bv array_length
+          | _ -> raise (UnsupportedQuery "We do not currently support indexing arrays with anything other than BitVector or Bool")
+        end
     | PA.Ty_array (t1, t2) -> 
       print_endline ("in array case with " ^ name);
+      print_endline ("the array_max_size is " ^ (string_of_int !array_max));
       let returns_bool = match t2 with PA.Ty_bool -> true | _ -> false in 
+      let item_length = find_ty_bitvec_size t2 in 
       begin match t1 with 
         | PA.Ty_bv bv_index_size ->
           print_endline ("in replace bv case with " ^ name);
-          let item_length = find_ty_bitvec_size t2 in 
-          let num_items = exp 2 bv_index_size in 
-          let array_length = item_length * num_items in 
-          let equality_fun = fun x y ->  get_equality_function_for_array x y t1 t2 ~offset:0 ~offset_end:0 in 
-          let disequality_fun = fun x y -> get_disequality_function_for_array x y t1 t2 ~offset:0 ~offset_end:0 in 
-          let (array_term : Ctx.array_term) = {array_length = array_length;
+          if (!array_max <> -1 && bv_index_size > !array_max) then (
+            (* if the array is too large, we don't translate it*)
+            print_endline "Not translating array";
+            let num_items = exp 2 bv_index_size in 
+            let array_length = item_length * num_items in 
+            let (array_term : Ctx.array_term) = {array_length = array_length;
                                                 num_items = num_items;
                                                 array_bv_index_size = bv_index_size;
                                                 array_item_length = item_length;
                                                 array_subtype = t2;
                                                 returns_bool = returns_bool;
-                                                equality_fun = equality_fun;
-                                                disequality_fun = disequality_fun} in 
-          if (name <> "") then (
-            StrTbl.add Ctx.t.array_terms name array_term
-          );
-          PA.Ty_bv array_length
+                                                (*TODO, I think these equality and disequality functions are more complicated if these are arrays, but idk*)
+                                                bv_transform = false;
+                                                equality_fun = (fun x y -> PA.Eq (x, y));
+                                                disequality_fun = (fun x y -> PA.Not (PA.Eq (x, y)))} in 
+            if (name <> "") then (
+              StrTbl.add Ctx.t.array_terms name array_term
+            );
+            PA.Ty_array (t1, PA.Ty_bv item_length)
+          ) 
+          else (
+            raise (UnsupportedQuery "Not simplifying arrays")
+            (* let num_items = exp 2 bv_index_size in 
+            let array_length = item_length * num_items in 
+            let equality_fun = fun x y ->  get_equality_function_for_array x y t1 t2 ~offset:0 ~offset_end:0 in 
+            let disequality_fun = fun x y -> get_disequality_function_for_array x y t1 t2 ~offset:0 ~offset_end:0 in 
+            let (array_term : Ctx.array_term) = {array_length = array_length;
+                                                  num_items = num_items;
+                                                  array_bv_index_size = bv_index_size;
+                                                  array_item_length = item_length;
+                                                  array_subtype = t2;
+                                                  returns_bool = returns_bool;
+                                                  bv_transform = true;
+                                                  equality_fun = equality_fun;
+                                                  disequality_fun = disequality_fun} in 
+            if (name <> "") then (
+              StrTbl.add Ctx.t.array_terms name array_term
+            );
+            PA.Ty_bv array_length *)
+          )
         | PA.Ty_bool -> 
           print_endline "an array that returns bool";
-          let item_length = find_ty_bitvec_size t2 in 
           let num_items = 2 in 
           let array_length = item_length * num_items in 
-          let equality_fun = fun x y -> get_equality_function_for_array x y t1 t2 ~offset:0 ~offset_end:0 in 
-          let disequality_fun = fun x y -> get_disequality_function_for_array x y t1 t2 ~offset:0 ~offset_end:0 in 
+          let equality_fun = fun x y -> PA.Eq (x, y)(*(get_equality_function_for_array x y t1 t2 ~offset:0 ~offset_end:0*) in
+          let disequality_fun = fun x y -> PA.Eq (x, y)(*get_disequality_function_for_array x y t1 t2 ~offset:0 ~offset_end:0*) in 
           let (array_term : Ctx.array_term) = {array_length = array_length;
                                               num_items = 2;
                                               array_bv_index_size = 1;
                                               array_item_length = item_length;
                                               array_subtype = t2;
                                               returns_bool = returns_bool;
+                                              bv_transform = true;
                                               equality_fun = equality_fun;
                                               disequality_fun = disequality_fun} in 
           if (name <> "") then (
@@ -301,12 +293,12 @@ and replace_adt_array_ty ?(name = "") (ty: PA.ty) =
     | Ty_bv i -> print_endline ("in bv case with " ^ name ^ " and the type is: Ty_bv " ^ (string_of_int i)); ty
     | _ -> print_endline ("in other case with " ^ name); ty
 
-let rec make_cstor_interpretations (cstors : PA.cstor list) index size_acc cstor_tag_length adt_name total_length disallowed_tags acc =
+let rec make_cstor_interpretations (cstors : PA.cstor list) index size_acc cstor_tag_length adt_name total_length (disallowed_tags : PA.term list) acc =
   begin match cstors with 
     | cstor :: rest -> 
         let adt_ty = PA.Ty_bv total_length in
         let cstor_tag = int_to_bitvec cstor_tag_length index in
-        let cstor_tag_const = (PA.Const ("#b" ^ cstor_tag)) in
+        let cstor_tag_const = cstor_tag in
         let selector_name_ty_length = compute_selector_lengths cstor.cstor_args in 
         (* let selector_tys = List.map (fun (sel_name, sel_ty) -> (sel_name, PA.Ty_bv (find_ty_bitvec_size sel_ty))) cstor.cstor_args in *)
         let adt_length = List.fold_left (fun acc (_,_, n, _, _, _) -> acc + n) 0 selector_name_ty_length in
@@ -323,7 +315,9 @@ let rec make_cstor_interpretations (cstors : PA.cstor list) index size_acc cstor
                                                              end_pos = (size_acc + adt_length - 1);
                                                              adt_length = adt_length;
                                                              total_length = total_length;
-                                                             selectors = selector_table} 
+                                                             selectors = selector_table;
+                                                             selectors_list = List.map fst cstor.cstor_args;
+                                                             has_buffer = length_diff > 0} 
                                             in
         StrTbl.add Ctx.t.cstors cstor.cstor_name new_cstor_interpretation;
         (* let cstor_ty_decl = PA.Stmt_decl {fun_ty_vars = []; 
@@ -334,12 +328,14 @@ let rec make_cstor_interpretations (cstors : PA.cstor list) index size_acc cstor
         (* print_endline (cstor.cstor_name ^ " has adt_length " ^ (string_of_int adt_length) ^ " and total_length " ^ (string_of_int total_length)); *)
         let cstor_def = 
           if (length_diff > 0) then (
-            let var_name = "contrived_variable" ^ (string_of_int Ctx.t.vars_created) in
-            Ctx.increment_vars_created ();
+            (* let var_name = "contrived_variable" ^ (string_of_int Ctx.t.vars_created) in
+            Ctx.increment_vars_created (); *)
+            let buffer_name = cstor.cstor_name ^ "_buffer" in 
             let var_decl = PA.Stmt_decl {fun_ty_vars = []; 
-                           fun_name = var_name;
+                           fun_name = buffer_name;
                            fun_args = [];
-                           fun_ret = PA.Ty_bv length_diff} in
+                           (*TODO: handle cases where I don't need a buffer differently*)
+                           fun_ret = PA.Ty_bv (length_diff)} in
             let fun_def = 
               PA.Stmt_fun_def {fr_decl = {fun_ty_vars = []; 
                                           fun_name = cstor.cstor_name;
@@ -348,8 +344,8 @@ let rec make_cstor_interpretations (cstors : PA.cstor list) index size_acc cstor
                                fr_body =  List.fold_left 
                                            (fun acc x -> PA.Bitvec (PA.Concat, [acc; x]))
                                            (PA.Bitvec (PA.Concat, 
-                                                       [PA.Const ("#b" ^ cstor_tag);
-                                                        PA.Const var_name;]))
+                                                       [cstor_tag;
+                                                        PA.Const buffer_name;]))
                                            reversed_selectors} in 
             [var_decl; fun_def]
           ) else (
@@ -361,7 +357,8 @@ let rec make_cstor_interpretations (cstors : PA.cstor list) index size_acc cstor
                                         (fun acc x -> PA.Bitvec (PA.Concat, [acc; x]))
                                         cstor_tag_const
                                         reversed_selectors)}]
-          ) in
+          ) 
+        in
                                     
         (* let selectors_ty_decl = 
           List.map (fun (sel_name, sel_ty, _, _, _, _) ->
@@ -415,11 +412,20 @@ let rec make_cstor_interpretations (cstors : PA.cstor list) index size_acc cstor
            tag_end_pos = total_length - 1;
            } in
         StrTbl.add Ctx.t.testers ("is-" ^ cstor.cstor_name) tester_record;
-        let testers_def = PA.Stmt_fun_def {fr_decl = {fun_ty_vars = []; 
-                                                      fun_name = "is-" ^ cstor.cstor_name;
-                                                      fun_args = [(adt_name ^ "_var", adt_ty)];
-                                                      fun_ret = PA.ty_bool};
-                                           fr_body = PA.Eq (PA.Bitvec ((PA.Extract (total_length - 1, total_length - cstor_tag_length)), [PA.Const (adt_name ^ "_var")]), cstor_tag_const)}
+        let testers_def = 
+              if (rest = []) then (
+                PA.Stmt_fun_def {fr_decl = {fun_ty_vars = []; 
+                                fun_name = "is-" ^ cstor.cstor_name;
+                                fun_args = [(adt_name ^ "_var", adt_ty)];
+                                fun_ret = PA.ty_bool};
+                                fr_body = PA.Bitvec (PA.BVUge, [PA.Bitvec ((PA.Extract (total_length - 1, total_length - cstor_tag_length)), [PA.Const (adt_name ^ "_var")]); cstor_tag_const])}
+              ) else (
+                  PA.Stmt_fun_def {fr_decl = {fun_ty_vars = []; 
+                                  fun_name = "is-" ^ cstor.cstor_name;
+                                  fun_args = [(adt_name ^ "_var", adt_ty)];
+                                  fun_ret = PA.ty_bool};
+                        fr_body = PA.Eq (PA.Bitvec ((PA.Extract (total_length - 1, total_length - cstor_tag_length)), [PA.Const (adt_name ^ "_var")]), cstor_tag_const)}
+              )
         in
         let enum_case =
           if (cstor.cstor_args = []) then [PA.Stmt_assert (PA.App ("is-" ^ cstor.cstor_name, [PA.Const cstor.cstor_name]))] else [] in
@@ -443,11 +449,13 @@ let simplify_datatype (name: string) (cstors: PA.cstor list) =
   let total_length = cstor_tag_length + List.fold_left (fun acc x -> max acc (snd x)) 0 cstor_lengths in 
   let cstor_interpretations = make_cstor_interpretations cstors 0 0 cstor_tag_length name total_length disallowed_tags [] in
   let equality_function = (fun (x : PA.term) (y : PA.term) ->
-                                  get_equality_function_body x y cstors disallowed_tags total_length cstor_tag_length ~offset:0)
+                                  get_equality_function_body x y cstors)
   in
   let disequality_fun = (fun (x : PA.term) (y : PA.term) ->
-                                  get_disequality_function_body x y cstors disallowed_tags total_length cstor_tag_length ~offset:0)
+                                  PA.Not (get_equality_function_body x y cstors))
   in
+  (* let function_app_fun = (fun (f : string) (x : PA.term) (pos : int) ->
+                                  (get_function_app_body (Some (fun t -> PA.App (f, [t]))) x pos cstors)) in  *)
   Ctx.add_finite_adt name total_length cstor_tag_length disallowed_tags equality_function disequality_fun cstors;
 
   cstor_interpretations
@@ -498,16 +506,16 @@ let rec get_array_info = function
   | PA.Const a -> print_string ("In Const " ^ a);StrTbl.find_opt Ctx.t.array_terms a 
   | PA.App (f, _) -> print_string ("In App " ^ f);StrTbl.find_opt Ctx.t.array_terms f
   | PA.Array (PA.Store, [array; _; _]) -> get_array_info array
-  | PA.Array (PA.Select, [array; _]) -> 
-      let array_record = get_array_info array |> Option.get in 
-      let subtype = array_record.array_subtype in 
-      let placeholder_name = "array_placeholder_" ^ (string_of_int Ctx.t.array_placeholder_number) in
-      Ctx.increment_array_placeholder_number ();
-      let _ = replace_adt_array_ty ~name:placeholder_name subtype in 
-      StrTbl.find_opt Ctx.t.array_terms placeholder_name
-      (* match reduced_subtype with  *)
-      (*TODO: We need to change this somehow*)
-      (* raise (UnsupportedQuery " We do not currently support Select in get_array_info") *)
+  | PA.Array (PA.Select, [array; _]) ->
+      begin match get_array_info array with 
+        | Some array_record ->
+            let subtype = array_record.array_subtype in 
+            let placeholder_name = "array_placeholder_" ^ (string_of_int Ctx.t.array_placeholder_number) in
+            Ctx.increment_array_placeholder_number ();
+            let _ = replace_adt_array_ty ~name:placeholder_name subtype in 
+            StrTbl.find_opt Ctx.t.array_terms placeholder_name
+        | _ -> None 
+      end
   | If (_, t, _) -> get_array_info t
   | Let (_, _) ->
       raise (UnsupportedQuery " We do not currently support Let in get_array_info")
@@ -571,9 +579,10 @@ let rec add_array_term name = function
 | Array (op, terms) ->
     begin match op, terms with 
       | PA.Select, [array; _] -> 
-        let array_record = get_array_info array |> Option.get in 
-        let _  =  (replace_adt_array_ty ~name:name array_record.array_subtype) in 
-        ()
+        begin match get_array_info array with 
+          | Some array_record -> let _  =  (replace_adt_array_ty ~name:name array_record.array_subtype) in ()
+          | None -> ()
+        end
       | PA.Store, [array; _; _] -> add_array_term name array
       | _ -> raise (UnsupportedQuery "Incorrectly applied array")
     end
@@ -590,39 +599,48 @@ let rec add_array_term name = function
 
 
 let rec string_repeat (c : string) (n : int) = 
-  if (n <= 0) then ""
-  else (c ^ (string_repeat c (n-1)))
+  let rec aux c n =
+    match n with 
+      | 0 -> "" 
+      | m when m mod 2 = 0 -> 
+          let half = aux c (n / 2) in 
+          half ^ half
+      | _ -> c ^ aux c (n - 1)
+      in 
+  aux c n 
 
-let replace_array_term (terms : PA.term list) = function 
+let replace_array_term (terms : PA.term list) (array_record : Ctx.array_term) = function 
     | PA.Select -> 
+        let bool_conversion_function = if array_record.returns_bool then (print_endline "here with an array that returns bool";fun x -> PA.Eq (x, PA.Const "#b1")) else (fun x -> x) in
         begin match terms with 
-          | [array; index] -> 
-              let array_record = get_array_info array |> Option.get in
+          | [array; index] when array_record.bv_transform -> 
               let index = PA.Bitvec ((PA.Zero_extend (array_record.array_length - array_record.array_bv_index_size)), [index]) in
               print_endline ("The array item length is " ^ (string_of_int array_record.array_item_length) ^ " and the array length is " ^ (string_of_int array_record.array_length));
-              let array_item_length_bitvec = PA.Const ("#b" ^ (int_to_bitvec array_record.array_length array_record.array_item_length)) in
+              let array_item_length_bitvec = (int_to_bitvec array_record.array_length array_record.array_item_length) in
               print_endline "end call";
-              let bool_conversion_function = if array_record.returns_bool then (print_endline "here with an array that returns bool";fun x -> PA.Eq (x, PA.Const "#b1")) else (fun x -> x) in
               bool_conversion_function 
                 (PA.Bitvec (PA.Extract(array_record.array_item_length - 1, 0),
                           [PA.Bitvec (PA.BVLshr, [array; PA.Bitvec (BVMul, [index; array_item_length_bitvec])])]))
-          | _ -> raise (UnsupportedQuery "Incorrectly applied select")
+          | _ -> bool_conversion_function (PA.Array (PA.Select, terms))
         end
     | PA.Store ->
         match terms with 
-          | [array; index; new_val] -> 
-            let array_record = get_array_info array |> Option.get in
+          | [array; index; new_val] when array_record.bv_transform -> 
             let index = PA.Bitvec ((PA.Zero_extend (array_record.array_length - array_record.array_bv_index_size)), [index]) in
             print_endline ("in a store case where the item length is" ^ (string_of_int array_record.array_item_length) ^ " and the array length is" ^ (string_of_int array_record.array_length));
             Ctx.print_array_term array_record;
+            let array_item_length_bitvec = (int_to_bitvec array_record.array_length array_record.array_item_length) in
+            let index_product = PA.Bitvec (BVMul, [index; array_item_length_bitvec]) in 
             let zero_out = PA.Bitvec (BVXor, 
                                         [PA.Bitvec (PA.BVShl, 
-                                                        [PA.Const ("#b" ^ (string_repeat "0" ((array_record.num_items - 1) * array_record.array_item_length)) ^ (string_repeat "1" array_record.array_item_length));
-                                                         index]);
-                                         PA.Const ("#b" ^ (string_repeat "1" array_record.array_length))]) in
-            let new_val_extended = PA.Bitvec (BVShl, [Bitvec (PA.Zero_extend (array_record.array_length - array_record.array_item_length), [new_val]) ; index]) in
+                                                        [ (*PA.Bitvec (PA.BVconst ((exp 2 array_record.array_item_length) - 1, array_record.num_items * array_record.array_item_length), []);*)
+                                                          PA.Const ("#b" ^ (string_repeat "0" ((array_record.num_items - 1) * array_record.array_item_length)) ^ (string_repeat "1" array_record.array_item_length));
+                                                         index_product]);
+                                         PA.Const ("#b" ^ (string_repeat "1" array_record.array_length))
+                                         (*PA.Bitvec (PA.BVconst ((exp 2 array_record.array_item_length) - 1, array_record.array_length), [])*)]) in
+            let new_val_extended = PA.Bitvec (BVShl, [Bitvec (PA.Zero_extend (array_record.array_length - array_record.array_item_length), [new_val]) ; index_product]) in
             PA.Bitvec (PA.BVOr, [(PA.Bitvec (PA.BVAnd, [array; zero_out])); new_val_extended]) (* (array && zero-out) || new_val_extended*)
-          | _ -> raise (UnsupportedQuery "Incorrectly applied store")
+          | _ -> PA.Array (PA.Store, terms)
           
 
 
@@ -656,35 +674,39 @@ let rec replace_equalities term =
         Exists (new_bindings, replace_equalities term)
     | App (f, [t]) -> 
         (* If f is a selector, then assert that t can only have one of the correct tags  *)
-        let app = PA.App (f, [replace_equalities t]) in
-        begin match StrTbl.find_opt Ctx.t.testers f with 
+        PA.App (f, [replace_equalities t])
+        (* begin match StrTbl.find_opt Ctx.t.testers f with 
           | Some tester_record ->
               let start, stop = tester_record.tag_start_pos, tester_record.tag_end_pos in
               let disallow_tags = List.map 
                                     (fun tag -> 
                                       PA.Not (PA.Eq (Bitvec (PA.Extract (stop, start), [t]),
-                                                    PA.Const ("#b" ^ tag))))
+                                                    tag)))
                                     tester_record.disallowed_tags in
               PA.And (app::disallow_tags)
           | None -> app
-          end
+          end *)
     | Not (App (f, [t])) ->
-        let app = PA.Not (PA.App (f, [replace_equalities t])) in
-        begin match StrTbl.find_opt Ctx.t.testers f with 
+        PA.Not (PA.App (f, [replace_equalities t]))
+        (* begin match StrTbl.find_opt Ctx.t.testers f with 
           | Some tester_record ->
               let start, stop = tester_record.tag_start_pos, tester_record.tag_end_pos in
               let disallow_tags = List.map 
                                     (fun tag -> 
                                       PA.Not (PA.Eq (Bitvec (PA.Extract (stop, start), [t]),
-                                                    PA.Const ("#b" ^ tag))))
+                                                    tag)))
                                     tester_record.disallowed_tags in
               PA.And (app::disallow_tags)
           | None -> app
-        end
+        end *)
     | App (f, terms) -> App (f, List.map replace_equalities terms)
     | Bitvec (op, terms) -> Bitvec (op, List.map replace_equalities terms)
     | Arith (op, terms) -> Arith (op, List.map replace_equalities terms)
-    | Array (op, terms) -> replace_array_term (List.map replace_equalities terms) op
+    | Array (op, terms) -> 
+      begin match (get_array_info (List.hd terms)) with 
+        | Some array_record -> replace_array_term (List.map replace_equalities terms) array_record op
+        | None -> Array (op, List.map replace_equalities terms) 
+      end
     | Match _ -> raise (UnsupportedQuery "We do not currently support Match")
     | If (t1, t2, t3) -> If (replace_equalities t1, replace_equalities t2, replace_equalities t3)
     | Let (bindings, t) -> 
@@ -703,165 +725,37 @@ let rec replace_equalities term =
     | Cast _ -> raise (UnsupportedQuery "We do not currently support Cast")
     | HO_app _ -> raise (UnsupportedQuery "We do not currently support HO_App")
     | Attr _ -> raise (UnsupportedQuery "We do not currently support Attr")
-    | _ -> term
+    | _ -> term    
+
+let list_before list j = List.filteri (fun i _ -> i < j) list
+let list_after list j = List.filteri (fun i _ -> i > j) list
+let list_replace list i replace = (list_before list i) @ (replace :: list_after list i)
 
 
-(* This is the not tail recursive version which is kinda cool, but more complicated and not necessart*)
-(* 
-let rec replace_equalities (stack : (PA.term * (PA.term ref)) list) acc = 
-  begin match stack with
-    | (term, term_pointer) :: rest ->
-        (* print_endline "replace_equalities call"; *)
-        (* stmt_printer [PA.Stmt_assert term]; *)
-        begin match term with 
-        | Eq (t1, t2) ->
-          begin match (find_equality_function t1) with 
-            | Some f ->
-                let subterm_pointer1, subterm_pointer2 = ref (PA.Const "should have been replaced"), ref (PA.Const "should have been replaced") in
-                let pointer_assignment = (term_pointer, (fun l -> f !(List.nth l 0) !(List.nth l 1)), [subterm_pointer1; subterm_pointer2]) in
-                (replace_equalities [@tailcall]) ((t1, subterm_pointer1)::(t2, subterm_pointer2)::rest) (pointer_assignment :: acc)
-            | None -> 
-                begin match (find_equality_function t2) with 
-                  | Some f ->
-                    let subterm_pointer1, subterm_pointer2 = ref (PA.Const "should have been replaced"), ref (PA.Const "should have been replaced") in
-                    let pointer_assignment = (term_pointer, (fun l -> f !(List.nth l 0) !(List.nth l 1)), [subterm_pointer1; subterm_pointer2]) in
-                    (replace_equalities [@tailcall]) ((t1, subterm_pointer1)::(t2, subterm_pointer2)::rest) (pointer_assignment :: acc)
-                  | None ->
-                    let subterm_pointer1, subterm_pointer2 = ref (PA.Const "should have been replaced"), ref (PA.Const "should have been replaced") in
-                    let pointer_assignment = (term_pointer, (fun l -> PA.Eq (!(List.nth l 0), !(List.nth l 1))), [subterm_pointer1; subterm_pointer2]) in
-                    (replace_equalities [@tailcall]) ((t1, subterm_pointer1)::(t2, subterm_pointer2)::rest) (pointer_assignment :: acc)
-                end
-          end
-        | Not (Eq (t1, t2)) -> 
-          begin match (find_disequality_function t1) with 
-          | Some f ->
-            let subterm_pointer1, subterm_pointer2 = ref (PA.Const "should have been replaced"), ref (PA.Const "should have been replaced") in
-            let pointer_assignment = (term_pointer, (fun l -> f !(List.nth l 0) !(List.nth l 1)), [subterm_pointer1; subterm_pointer2]) in
-            (replace_equalities [@tailcall]) ((t1, subterm_pointer1)::(t2, subterm_pointer2)::rest) (pointer_assignment :: acc)
-          | None -> 
-              begin match (find_disequality_function t2) with 
-                | Some f ->
-                  let subterm_pointer1, subterm_pointer2 = ref (PA.Const "should have been replaced"), ref (PA.Const "should have been replaced") in
-                  let pointer_assignment = (term_pointer, (fun l -> f !(List.nth l 0) !(List.nth l 1)), [subterm_pointer1; subterm_pointer2]) in
-                  (replace_equalities [@tailcall]) ((t1, subterm_pointer1)::(t2, subterm_pointer2)::rest) (pointer_assignment :: acc)
-                | None -> 
-                  let subterm_pointer1, subterm_pointer2 = ref (PA.Const "should have been replaced"), ref (PA.Const "should have been replaced") in
-                  let pointer_assignment = (term_pointer, (fun l -> PA.Not (PA.Eq ((!(List.nth l 0), !(List.nth l 1))))), [subterm_pointer1; subterm_pointer2]) in
-                  (replace_equalities [@tailcall]) ((t1, subterm_pointer1)::(t2, subterm_pointer2)::rest) (pointer_assignment :: acc)
-              end
-        end
-        | Forall (bindings, term) ->
-            let new_bindings = List.map (fun (s, ty) -> (s, replace_adt_array_ty ty ~name:s)) bindings in
-            let subterm_pointer = ref (PA.Const "should have been replaced") in
-            let pointer_assignment = (term_pointer, (fun l -> PA.Forall (new_bindings, !(List.nth l 0))), [subterm_pointer]) in
-            (replace_equalities [@tailcall]) ((term, subterm_pointer) :: rest) (pointer_assignment :: acc)
-        | Exists (bindings, term) ->
-          let new_bindings = List.map (fun (s, ty) -> (s, replace_adt_array_ty ty ~name:s)) bindings in
-          let subterm_pointer = ref (PA.Const "should have been replaced") in
-          let pointer_assignment = (term_pointer, (fun l -> PA.Exists (new_bindings, !(List.nth l 0))), [subterm_pointer]) in
-          (replace_equalities [@tailcall]) ((term, subterm_pointer) :: rest) (pointer_assignment :: acc)
-        | App (f, [t]) -> 
-            (* If f is a selector, then assert that t can only have one of the correct tags  *)
-            let selector_fun = 
-              begin match StrTbl.find_opt Ctx.t.testers f with 
-                | Some tester_record ->
-                    let start, stop = tester_record.tag_start_pos, tester_record.tag_end_pos in
-                    let disallow_tags = List.map 
-                                          (fun tag -> 
-                                            PA.Not (PA.Eq (Bitvec (PA.Extract (stop, start), [t]),
-                                                          PA.Const ("#b" ^ tag))))
-                                          tester_record.disallowed_tags in
-                    (fun app -> PA.And (app::disallow_tags))
-                | None -> (fun app -> app)
-                end in
-                let subterm_pointer = ref (PA.Const "should have been replaced") in
-                term_pointer := selector_fun (PA.App (f, [!subterm_pointer]));
-                let pointer_assignment = (term_pointer, (fun l -> selector_fun (PA.App (f, [!(List.nth l 0)]))), [subterm_pointer]) in
-                (replace_equalities [@tailcall]) ((t, subterm_pointer) :: rest) (pointer_assignment :: acc)
-        | Not (App (f, [t])) ->
-          let selector_fun = 
-            begin match StrTbl.find_opt Ctx.t.testers f with 
-              | Some tester_record ->
-                  let start, stop = tester_record.tag_start_pos, tester_record.tag_end_pos in
-                  let disallow_tags = List.map 
-                                        (fun tag -> 
-                                          PA.Not (PA.Eq (Bitvec (PA.Extract (stop, start), [t]),
-                                                        PA.Const ("#b" ^ tag))))
-                                        tester_record.disallowed_tags in
-                  (fun app -> PA.And (app::disallow_tags))
-              | None -> (fun app -> app)
-              end in
-              let subterm_pointer = ref (PA.Const "should have been replaced") in
-              term_pointer := selector_fun (PA.Not (PA.App (f, [!subterm_pointer])));
-              let pointer_assignment = (term_pointer, (fun l -> selector_fun (PA.Not (PA.App (f, [!(List.nth l 0)])))), [subterm_pointer]) in
-              (replace_equalities [@tailcall]) ((t, subterm_pointer) :: rest) (pointer_assignment :: acc)
-        | Array (op, terms) -> 
-          let subterm_pointers = List.map (fun _ -> ref (PA.Const "should have been replaced")) terms in 
-          let pointer_assignment = (term_pointer, (fun l -> replace_array_term (List.map (fun x -> !x) l) op), subterm_pointers) in
-          let new_terms_to_replace = List.map2 (fun x y -> (x, y)) terms subterm_pointers in
-          (replace_equalities [@tailcall]) (new_terms_to_replace @ rest) (pointer_assignment :: acc)
-        | Match _ -> raise (UnsupportedQuery "We do not currently support Match")
-        | If (t1, t2, t3) -> 
-          let subterm_pointer1, subterm_pointer2, subterm_pointer3 = ref (PA.Const "should have been replaced"), ref (PA.Const "should have been replaced"), ref (PA.Const "should have been replaced") in
-          term_pointer := If (!subterm_pointer1, !subterm_pointer2, !subterm_pointer3);
-          let pointer_assignment = (term_pointer, (fun l -> PA.If (!(List.nth l 0), !(List.nth l 1), !(List.nth l 2))), [subterm_pointer1; subterm_pointer2; subterm_pointer3]) in
-          (replace_equalities [@tailcall]) ((t1, subterm_pointer1)::(t2, subterm_pointer2)::(t3, subterm_pointer3)::rest) (pointer_assignment :: acc)
-        | Let (bindings, t) ->
-            (*If we are binding variables, we add them to the context*)
-            (*TODO: make sure variable name are unique, otherwise this will do weird stuff*)
-            let _ = List.map (fun (name, t) -> add_array_term name t) bindings in
-            let binding_subterm_pointers = List.map (fun _ -> ref (PA.Const "should have been replaced")) bindings in 
-            let t_subterm_pointer = ref (PA.Const "should have been replaced") in
-            (* term_pointer := Let ((List.map2 (fun (name, _) pointer -> name, !pointer) bindings binding_subterm_pointers), !t_subterm_pointer); *)
-            (*TODO: List.tl might be unsafe here if there are no bnidings*)
-            let pointer_assignment = (term_pointer, (fun l -> PA.Let ((List.map2 (fun (name, _) pointer -> name, !pointer) bindings (List.tl l)), !(List.nth l 0))), t_subterm_pointer :: binding_subterm_pointers) in
-            let new_terms_to_replace = List.map2 (fun (_, term) pointer -> (term, pointer)) bindings binding_subterm_pointers in
-            (replace_equalities [@tailcall]) ((t, t_subterm_pointer)::new_terms_to_replace @ rest) (pointer_assignment :: acc)
-        | Is_a (name, t) -> 
-          let subterm_pointer = ref (PA.Const "should have been replaced") in
-          let pointer_assignment = (term_pointer, (fun l -> PA.App ("is-" ^ name, [!(List.nth l 0)])), [subterm_pointer]) in
-          (replace_equalities [@tailcall]) ((t, subterm_pointer) :: rest) (pointer_assignment :: acc)
-        | Fun (var, t) -> 
-          let subterm_pointer = ref (PA.Const "should have been replaced") in
-          term_pointer := PA.Fun (var, !subterm_pointer);
-          let pointer_assignment = (term_pointer, (fun l -> PA.Fun (var, !(List.nth l 0))), [term_pointer]) in
-          (replace_equalities [@tailcall]) ((t, subterm_pointer) :: rest) (pointer_assignment :: acc)
-        | Imply (t1, t2) -> 
-          let subterm_pointer1, subterm_pointer2 = ref (PA.Const "should have been replaced"), ref (PA.Const "should have been replaced") in 
-          let pointer_assignment = (term_pointer, (fun l -> PA.Imply (!(List.nth l 0), !(List.nth l 1))), [subterm_pointer1; subterm_pointer2]) in 
-          (replace_equalities [@tailcall]) ((t1, subterm_pointer1) :: (t2, subterm_pointer2) :: rest) (pointer_assignment :: acc)
-        | And terms -> 
-          let subterm_pointers = List.map (fun _ -> ref (PA.Const "should have been replaced")) terms in 
-          let pointer_assignment = (term_pointer, (fun l -> PA.And (List.map (fun x -> !x) l)), subterm_pointers) in
-          let new_terms_to_replace = List.map2 (fun x y -> (x, y)) terms subterm_pointers in
-          (replace_equalities [@tailcall]) (new_terms_to_replace @ rest) (pointer_assignment :: acc)
-        | Or terms ->
-          let subterm_pointers = List.map (fun _ -> ref (PA.Const "should have been replaced")) terms in 
-          let pointer_assignment = (term_pointer, (fun l -> PA.Or (List.map (fun x -> !x) l)), subterm_pointers) in
-          let new_terms_to_replace = List.map2 (fun x y -> (x, y)) terms subterm_pointers in
-          (replace_equalities [@tailcall]) (new_terms_to_replace @ rest) (pointer_assignment :: acc)
-        | Not term -> 
-          let subterm_pointer = ref (PA.Const "should have been replaced") in
-          let pointer_assignment = (term_pointer, (fun l -> PA.Not !(List.nth l 0)), [subterm_pointer]) in
-          (replace_equalities [@tailcall]) ((term, subterm_pointer) :: rest) (pointer_assignment :: acc)
-        | Distinct [t1; t2] -> 
-          (replace_equalities [@tailcall]) ((PA.Not (PA.Eq (t1, t2)), term_pointer) :: rest) acc 
-        | Distinct _ -> raise (UnsupportedQuery "We do not currently support Distinc for more than two items")
-        | Cast _ -> raise (UnsupportedQuery "We do not currently support Cast")
-        | HO_app _ -> raise (UnsupportedQuery "We do not currently support HO_App")
-        | Attr _ -> raise (UnsupportedQuery "We do not currently support Attr")
-        | _ -> term_pointer := term; (replace_equalities [@tailcall]) rest acc
-      end
-    | _ -> acc
-end *)
+let rec create_recursive_function fun_name (pos : int) args ret_ty num_functions acc_defs fun_args = 
+  begin match fun_args with 
+    | PA.Ty_app (s, []) :: rest when StrTbl.mem Ctx.t.finite_adts s  -> 
+        let record = StrTbl.find Ctx.t.finite_adts s in
+        let new_fun_name = 
+          if (List.exists (fun ty -> match ty with PA.Ty_app (s, []) when StrTbl.mem Ctx.t.finite_adts s -> true | _ -> false) rest) 
+            then (fun_name ^ "_modified_" ^ (string_of_int num_functions))
+            else fun_name
+          in
+        let new_decl = PA.mk_fun_decl ~ty_vars:[] new_fun_name args ret_ty in
+        let consts = List.map (fun x -> PA.Const (fst x)) args in 
+        let new_body = 
+          get_function_app_body 
+          (Some (fun term -> PA.App (fun_name ^ "_modified_" ^ (string_of_int (num_functions - 1)), list_replace consts pos term)))
+          (List.nth consts pos)
+          pos
+          record.cstors
+        in
+       let new_def : PA.stmt = PA.Stmt_fun_def {fr_decl = new_decl; fr_body = new_body} in 
+       create_recursive_function fun_name (pos + 1) args ret_ty (num_functions + 1) (acc_defs @ [new_def]) rest
+    | _ :: rest -> create_recursive_function fun_name (pos + 1) args ret_ty (num_functions) acc_defs rest
+    | [] -> acc_defs
+  end
 
-(* let rec assign_pointers = function
-  | (pointer, f, inputs) :: rest ->
-      pointer := f inputs;
-      (assign_pointers [@tailcall]) rest 
-  | _ -> () *)
-  
-    
 
 let remove_datatypes stmts =
   let rec aux acc = function
@@ -874,6 +768,17 @@ let remove_datatypes stmts =
             let datatypes = datatype_cycle_detect datatypes datatype_names [] in
             let stmts = simply_datatyp_decls datatypes [] in 
             aux (acc @ stmts) rest
+        | Stmt_decl fun_decl when List.exists (fun ty ->  match ty with PA.Ty_app (s, []) when StrTbl.mem Ctx.t.finite_adts s -> true | _ -> false) fun_decl.fun_args ->
+          print_endline ("We are replacing the declaration " ^ fun_decl.fun_name);
+          let new_fun_args = List.map replace_adt_array_ty fun_decl.fun_args in 
+          let new_fun_ret = replace_adt_array_ty ~name:fun_decl.fun_name fun_decl.fun_ret in 
+          let (new_fun_decl : PA.ty PA.fun_decl) = {fun_ty_vars = fun_decl.fun_ty_vars;
+                                                    fun_name = fun_decl.fun_name ^ "_modified_0";
+                                                    fun_args = new_fun_args;
+                                                    fun_ret = new_fun_ret} in
+
+          let new_decls = create_recursive_function fun_decl.fun_name 0 (List.mapi (fun i x -> ("dummy_var" ^ string_of_int i, x)) new_fun_args) new_fun_ret 1 [] fun_decl.fun_args in
+          aux (acc @ [PA.Stmt_decl new_fun_decl] @ new_decls) rest
         | Stmt_decl fun_decl ->
           print_endline ("We are replacing the declaration " ^ fun_decl.fun_name);
           let new_fun_args = List.map replace_adt_array_ty fun_decl.fun_args in 
@@ -884,9 +789,6 @@ let remove_datatypes stmts =
                                                     fun_ret = new_fun_ret} in
           aux (acc @ [PA.Stmt_decl new_fun_decl]) rest
         | Stmt_assert term -> 
-            (* let new_term_pointer = ref (PA.Const "should have been replaced") in
-            let pointer_assignments = replace_equalities [(term, new_term_pointer)] [] in
-            let _ = assign_pointers pointer_assignments in *)
             let new_term = replace_equalities term in
             aux (acc @ [PA.Stmt_assert new_term]) rest
         | Stmt_fun_def fun_def -> 

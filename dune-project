@@ -18,4 +18,6 @@
   (ocamlgraph (>= 2.0.0))
   (containers (>= 3.12))
   (ounit2 (>= 2.2.7))
-  (ocamlformat (>= 0.26.0))))
+  (ocamlformat (>= 0.26.0))
+  (shexp (>= 0.17.0 ))
+  (bitwuzla (>= 1.0.5))))

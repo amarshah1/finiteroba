@@ -13,9 +13,12 @@
   f0inline
   f0rename
   f1normalize
-  f2simplify
+  f2flatten
+  f3removearrays
+  f4simplify
   context
   z3_utils
+  bitwuzla_utils
   ast
   loc
   smtlib_utils

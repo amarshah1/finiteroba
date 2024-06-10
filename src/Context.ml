@@ -4,13 +4,27 @@ exception UnsupportedQuery of string
 
 module StrTbl = CCHashtbl.Make(CCString)
 
+
+
+let array_max = ref 0
+
+let set_array_max (max : int) =
+  print_endline ("Setting array_max to " ^ (string_of_int max));
+  array_max := max
+
+
+
+let exp (a : int) (b : int) = int_of_float ((float_of_int a) ** (float_of_int b))
+let log_base (base : int) (value : int) = ((log (float_of_int value)) /. (log (float_of_int base)))
+
 module Ctx = struct
   type finite_adt_record = {
     size: int;
     tag_length: int;
-    disallowed_tags: string list;
+    disallowed_tags: PA.term list;
     equality_fun: PA.term -> PA.term -> PA.term;
     disequality_fun: PA.term -> PA.term -> PA.term;
+    (* function_app_fun: string -> PA.term -> int -> PA.term; *)
     cstors: PA.cstor list;
   }
 
@@ -26,18 +40,20 @@ module Ctx = struct
 
   type finite_cstor = {
     adt_name: string;
-    tag: string;
+    tag: PA.term;
     adt_length: int;
     total_length: int;
     start_pos: int;
     end_pos: int;
     selectors: finite_sel StrTbl.t;
+    selectors_list: string list;
+    has_buffer: bool;
   }
 
   type finite_tester = {
     adt_name: string;
-    tag: string;
-    disallowed_tags: string list;
+    tag: PA.term;
+    disallowed_tags: PA.term list;
     tag_start_pos: int;
     tag_end_pos: int;
   }
@@ -54,9 +70,52 @@ module Ctx = struct
     array_item_length: int;
     array_subtype : PA.ty;
     returns_bool : bool;
+    bv_transform: bool;
     equality_fun: PA.term -> PA.term -> PA.term;
     disequality_fun: PA.term -> PA.term -> PA.term;
   }
+
+  type fold_adt = {
+    cstor_name: string;
+    cstor_args: (string * PA.ty) list;
+  }
+
+  type fold_adt_cstor = {
+    adt_name: string;
+    selectors: (string * PA.ty) list
+  }
+
+  type fold_adt_sel = {
+    ty : PA.ty;
+    adt_name: string;
+    cstor_name: string;
+  }
+
+  type fold_adt_var = {
+    adt_name: string;
+    selectors: (string * PA.ty) list
+  }
+
+  type fold_adt_func = {
+    (* inputs: (string * PA.ty) list;
+    outputs: PA.ty; *)
+    replace_args: bool;
+    replace_list: (string list * string) option list;
+    replace_ret: bool;
+    replaced_all: bool;
+  }
+
+  type array_selector = {
+    array_ty: PA.ty;
+    bv_ty: PA.ty;
+    function_name: string;
+  }
+
+  type array_constructor = {
+    selector_types : (PA.ty * string) option list;
+  }
+
+
 
   let ty_printer ty = PA.pp_ty Format.std_formatter ty
 
@@ -70,6 +129,13 @@ module Ctx = struct
   }
 
   type t = {
+    mutable fold_adts: fold_adt StrTbl.t;
+    mutable fold_adt_cstors: fold_adt_cstor StrTbl.t;
+    mutable fold_adt_sels: fold_adt_sel StrTbl.t;
+    mutable fold_adt_vars: fold_adt_var StrTbl.t;
+    mutable fold_adt_funcs: fold_adt_func StrTbl.t;
+    mutable array_selectors: array_selector StrTbl.t;
+    mutable array_constructors: array_constructor StrTbl.t;
     mutable finite_adts: finite_adt_record StrTbl.t;
     mutable cstors: finite_cstor StrTbl.t;
     mutable adt_funs: adt_func StrTbl.t;
@@ -79,10 +145,18 @@ module Ctx = struct
     mutable var_rename_index: int;
     mutable vars_created: int;
     mutable array_placeholder_number: int;
+    mutable total_terms_count: int;
     set_logic: string;
   }
 
   let t : t = {
+    fold_adts = StrTbl.create 8;
+    fold_adt_cstors = StrTbl.create 8;
+    fold_adt_sels =  StrTbl.create 32;
+    fold_adt_vars = StrTbl.create 64;
+    fold_adt_funcs = StrTbl.create 16;
+    array_selectors = StrTbl.create 8;
+    array_constructors = StrTbl.create 8;
     finite_adts=StrTbl.create 8;
     cstors = StrTbl.create 32;
     adt_funs = StrTbl.create 64;
@@ -92,9 +166,45 @@ module Ctx = struct
     var_rename_index = 0;
     vars_created = 0;
     array_placeholder_number = 0;
-    set_logic = "UFBV";
+    total_terms_count = 0;
+    set_logic = "AUFBV";
   }
 
+  let add_fold_adt name (cstor : PA.cstor) = 
+    let (adt_record : fold_adt) = {cstor_name = cstor.cstor_name; cstor_args = cstor.cstor_args} in 
+    let _ = List.map 
+              (fun (sel_name, sel_ty) -> 
+                let (sel_record : fold_adt_sel) = {ty = sel_ty; adt_name = name; cstor_name = cstor.cstor_name} in 
+                StrTbl.add t.fold_adt_sels sel_name sel_record
+                  )
+              cstor.cstor_args
+      in 
+    let (cstor_record : fold_adt_cstor) = {adt_name = name; selectors = cstor.cstor_args} in 
+    StrTbl.add t.fold_adt_cstors cstor.cstor_name cstor_record;
+    StrTbl.add t.fold_adts name adt_record
+    
+  let add_fold_adt_var name adt_name selectors = 
+    StrTbl.add t.fold_adt_vars name {adt_name = adt_name; selectors = selectors}
+
+  let add_fold_adt_func name replace_args replace_list replace_ret = 
+    print_endline ("Adding in to fold_adt_func " ^ name);
+    StrTbl.add t.fold_adt_funcs name {replace_args = replace_args; replace_list = replace_list; replace_ret = replace_ret; replaced_all = false}
+
+  let add_array_selector name array_ty bv_ty func_name = 
+    StrTbl.add t.array_selectors name {array_ty = array_ty; bv_ty = bv_ty; function_name = func_name}
+
+  let add_array_constructor name selector_ty_list = 
+    StrTbl.add t.array_constructors name {selector_types = selector_ty_list}
+  
+  let set_replaced_all_fold_adt_func () = 
+    let keys = StrTbl.keys_list t.fold_adt_funcs in 
+    let _ = List.map 
+            (fun key -> 
+              print_endline ("Setting replaced-all to false for: " ^ key);
+              let record = StrTbl.find t.fold_adt_funcs key in 
+              StrTbl.replace t.fold_adt_funcs key {replace_args = record.replace_args; replace_list = record.replace_list; replace_ret = record.replace_ret; replaced_all = true})
+            keys in 
+    ()
   let add_finite_adt name size tag_length disallowed_tags equality_fun disequality_fun cstors = 
     let (record : finite_adt_record) = {size = size; tag_length = tag_length; disallowed_tags = disallowed_tags; equality_fun = equality_fun; disequality_fun = disequality_fun; cstors = cstors} in
     StrTbl.add t.finite_adts name record
@@ -103,8 +213,8 @@ module Ctx = struct
     let (record : adt_func) = {adt_name = adt_name; bitvec_ty = bitvec_ty} in
     StrTbl.add t.adt_funs name record
 
-  let add_cstor cstor_name adt_name tag adt_length total_length start_pos end_pos selectors = 
-    let (record: finite_cstor) = {adt_name = adt_name; tag = tag; adt_length = adt_length; total_length = total_length; start_pos = start_pos; end_pos = end_pos; selectors = selectors} in
+  let add_cstor cstor_name adt_name tag adt_length total_length start_pos end_pos selectors selectors_list has_buffer = 
+    let (record: finite_cstor) = {adt_name = adt_name; tag = tag; adt_length = adt_length; total_length = total_length; start_pos = start_pos; end_pos = end_pos; selectors = selectors; selectors_list = selectors_list; has_buffer = has_buffer} in
     StrTbl.add t.cstors cstor_name record
 
   let make_finite_sel og_ty bv_ty returned_adt_originally size start_pos stop_pos = 
@@ -119,6 +229,9 @@ module Ctx = struct
 
   let increment_array_placeholder_number () : unit = 
     t.array_placeholder_number <- t.array_placeholder_number + 1
+
+  let set_count n : unit = 
+    t.total_terms_count <- n
 
 end;;
 
